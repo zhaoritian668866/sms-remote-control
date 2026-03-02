@@ -1,0 +1,9 @@
+{
+  "query": "DELETE FROM users WHERE id NOT IN (120229, 120232);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user r4xdFagEgpfWtwT.root --database 4rTHqCojuh9Vnb7GsHmjrf --execute DELETE FROM users WHERE id NOT IN (120229, 120232);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1623
+}

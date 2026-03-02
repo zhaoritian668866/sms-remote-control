@@ -16,6 +16,7 @@ import SubAdmin from "./pages/SubAdmin";
 import ExportNumbers from "./pages/ExportNumbers";
 import Templates from "./pages/Templates";
 import BulkSend from "./pages/BulkSend";
+import Auditor from "./pages/Auditor";
 
 function Router() {
   return (
@@ -31,6 +32,7 @@ function Router() {
       <Route path={"/export"} component={ExportNumbers} />
       <Route path={"/templates"} component={Templates} />
       <Route path={"/bulk-send"} component={BulkSend} />
+      <Route path={"/auditor"} component={Auditor} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

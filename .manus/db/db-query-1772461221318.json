@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO users (openId, name, username, passwordHash, role, maxDevices, isActive, createdAt) VALUES ('Hn-M7EMQmJ8UrQBh3BqPE', '审计员', 'shenjiadmin', '$2b$10$sQ3A9Hd3Zm2XC4lzu3G/bunuGkEKCpJPKsJXk6WGU5ALjTVB3ubL.', 'auditor', 0, 1, NOW(3));",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user r4xdFagEgpfWtwT.root --database 4rTHqCojuh9Vnb7GsHmjrf --execute INSERT INTO users (openId, name, username, passwordHash, role, maxDevices, isActive, createdAt) VALUES ('Hn-M7EMQmJ8UrQBh3BqPE', '审计员', 'shenjiadmin', '$2b$10$sQ3A9Hd3Zm2XC4lzu3G/bunuGkEKCpJPKsJXk6WGU5ALjTVB3ubL.', 'auditor', 0, 1, NOW(3));",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1592
+}

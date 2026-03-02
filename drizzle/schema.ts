@@ -37,7 +37,7 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin", "superadmin"]).default("user").notNull(),
+  role: mysqlEnum("role", ["user", "admin", "superadmin", "auditor"]).default("user").notNull(),
   /** The group this user belongs to (null for superadmin) */
   groupId: int("groupId"),
   /** Maximum number of devices this user can connect */

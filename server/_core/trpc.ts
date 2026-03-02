@@ -1,4 +1,4 @@
-import { NOT_ADMIN_ERR_MSG, NOT_SUPERADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
+import { NOT_ADMIN_ERR_MSG, NOT_SUPERADMIN_ERR_MSG, NOT_AUDITOR_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
@@ -52,6 +52,24 @@ export const superadminProcedure = t.procedure.use(
 
     if (!ctx.user || ctx.user.role !== 'superadmin') {
       throw new TRPCError({ code: "FORBIDDEN", message: NOT_SUPERADMIN_ERR_MSG });
+    }
+
+    return next({
+      ctx: {
+        ...ctx,
+        user: ctx.user,
+      },
+    });
+  }),
+);
+
+/** Requires auditor or superadmin role */
+export const auditorProcedure = t.procedure.use(
+  t.middleware(async opts => {
+    const { ctx, next } = opts;
+
+    if (!ctx.user || (ctx.user.role !== 'auditor' && ctx.user.role !== 'superadmin')) {
+      throw new TRPCError({ code: "FORBIDDEN", message: NOT_AUDITOR_ERR_MSG });
     }
 
     return next({

@@ -22,7 +22,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useUnreadCounts } from "@/hooks/useUnread";
-import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft, Crown, Building2, FileDown, FileText, Zap } from "lucide-react";
+import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft, Crown, Building2, FileDown, FileText, Zap, Eye } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -117,7 +117,11 @@ function DashboardLayoutContent({
   const isMobile = useIsMobile();
   const { total: totalUnread } = useUnreadCounts();
 
-  const menuItems = [
+  const isAuditor = user?.role === "auditor";
+
+  const menuItems = isAuditor ? [
+    { icon: Eye, label: "审计台", path: "/auditor" },
+  ] : [
     { icon: LayoutDashboard, label: "总堂", path: "/" },
     { icon: Smartphone, label: "信使", path: "/devices", showUnread: true },
     { icon: MessageSquare, label: "传书", path: "/messages" },

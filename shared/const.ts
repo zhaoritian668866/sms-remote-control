@@ -4,3 +4,4 @@ export const AXIOS_TIMEOUT_MS = 30_000;
 export const UNAUTHED_ERR_MSG = 'Please login (10001)';
 export const NOT_ADMIN_ERR_MSG = 'You do not have required permission (10002)';
 export const NOT_SUPERADMIN_ERR_MSG = 'Superadmin permission required (10003)';
+export const NOT_AUDITOR_ERR_MSG = 'Auditor permission required (10004)';

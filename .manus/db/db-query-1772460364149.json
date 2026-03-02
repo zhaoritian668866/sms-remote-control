@@ -1,0 +1,82 @@
+{
+  "query": "SELECT id, openId, username, name, role, groupId, isActive FROM users ORDER BY id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user r4xdFagEgpfWtwT.root --database 4rTHqCojuh9Vnb7GsHmjrf --execute SELECT id, openId, username, name, role, groupId, isActive FROM users ORDER BY id;",
+  "rows": [
+    {
+      "id": "1",
+      "openId": "dyh77JzVaTKq3ew5a9amq6",
+      "username": "NULL",
+      "name": "日天 赵",
+      "role": "admin",
+      "groupId": "NULL",
+      "isActive": "1"
+    },
+    {
+      "id": "60003",
+      "openId": "24TwHty9Kp6RLEL4NaTB4x",
+      "username": "NULL",
+      "name": "xiaoqi07086688",
+      "role": "user",
+      "groupId": "NULL",
+      "isActive": "1"
+    },
+    {
+      "id": "60344",
+      "openId": "8yrpuhajnZQQFpsSiX7GVX",
+      "username": "NULL",
+      "name": "白 小",
+      "role": "user",
+      "groupId": "NULL",
+      "isActive": "1"
+    },
+    {
+      "id": "120228",
+      "openId": "local_xiaoqi6688_1772448279106",
+      "username": "xiaoqi6688",
+      "name": "小七",
+      "role": "user",
+      "groupId": "NULL",
+      "isActive": "1"
+    },
+    {
+      "id": "120229",
+      "openId": "mzzw6Zs4U5zIOY-7",
+      "username": "xiaoqiadmin",
+      "name": "超级管理员",
+      "role": "superadmin",
+      "groupId": "NULL",
+      "isActive": "1"
+    },
+    {
+      "id": "120230",
+      "openId": "local_ceshi1_1772452582482",
+      "username": "ceshi1",
+      "name": "测试1",
+      "role": "admin",
+      "groupId": "1",
+      "isActive": "1"
+    },
+    {
+      "id": "120231",
+      "openId": "local_ceshiyixian_1772452655574",
+      "username": "ceshiyixian",
+      "name": "测试一线",
+      "role": "user",
+      "groupId": "1",
+      "isActive": "1"
+    },
+    {
+      "id": "120232",
+      "openId": "local_xingguang_1772457900736",
+      "username": "xingguang",
+      "name": "星光",
+      "role": "admin",
+      "groupId": "2",
+      "isActive": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\topenId\tusername\tname\trole\tgroupId\tisActive\n1\tdyh77JzVaTKq3ew5a9amq6\tNULL\t日天 赵\tadmin\tNULL\t1\n60003\t24TwHty9Kp6RLEL4NaTB4x\tNULL\txiaoqi07086688\tuser\tNULL\t1\n60344\t8yrpuhajnZQQFpsSiX7GVX\tNULL\t白 小\tuser\tNULL\t1\n120228\tlocal_xiaoqi6688_1772448279106\txiaoqi6688\t小七\tuser\tNULL\t1\n120229\tmzzw6Zs4U5zIOY-7\txiaoqiadmin\t超级管理员\tsuperadmin\tNULL\t1\n120230\tlocal_ceshi1_1772452582482\tceshi1\t测试1\tadmin\t1\t1\n120231\tlocal_ceshiyixian_1772452655574\tceshiyixian\t测试一线\tuser\t1\t1\n120232\tlocal_xingguang_1772457900736\txingguang\t星光\tadmin\t2\t1\n",
+  "stderr": "",
+  "execution_time_ms": 1627
+}

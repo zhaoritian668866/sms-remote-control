@@ -1,7 +1,7 @@
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, adminProcedure, superadminProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, adminProcedure, superadminProcedure, auditorProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import QRCode from "qrcode";
@@ -877,6 +877,68 @@ export const appRouter = router({
 
         return { success: true };
       }),
+  }),
+
+  // ─── Auditor: Read-only access to stats, users, messages, export ───
+  auditor: router({
+    stats: auditorProcedure.query(async () => {
+      return getSystemStats();
+    }),
+
+    allUsers: auditorProcedure.query(async () => {
+      const userList = await getAllUsers();
+      const result = [];
+      for (const u of userList) {
+        const deviceCount = await getDeviceCountByUserId(u.id);
+        let groupName = null;
+        if (u.groupId) {
+          const group = await getGroupById(u.groupId);
+          groupName = group?.name || null;
+        }
+        result.push({ ...u, deviceCount, groupName });
+      }
+      return result;
+    }),
+
+    messages: auditorProcedure
+      .input(z.object({
+        groupId: z.number().optional(),
+        search: z.string().optional(),
+        startTime: z.number().optional(),
+        endTime: z.number().optional(),
+        limit: z.number().min(1).max(500).default(200),
+        offset: z.number().min(0).default(0),
+      }))
+      .query(async ({ input }) => {
+        return getAllMessagesForSuperadmin({
+          groupId: input.groupId,
+          search: input.search,
+          startTime: input.startTime,
+          endTime: input.endTime,
+          limit: input.limit,
+          offset: input.offset,
+        });
+      }),
+
+    exportNumbers: auditorProcedure
+      .input(z.object({
+        startTime: z.number().optional(),
+        endTime: z.number().optional(),
+        direction: z.enum(["incoming", "outgoing"]).optional(),
+        groupId: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        return getExportPhoneNumbers({
+          groupId: input.groupId,
+          startTime: input.startTime,
+          endTime: input.endTime,
+          direction: input.direction,
+        });
+      }),
+
+    groups: auditorProcedure.query(async () => {
+      return getAllGroups();
+    }),
   }),
 
   // ─── Public Config (for frontend to read customer service link etc.) ───
