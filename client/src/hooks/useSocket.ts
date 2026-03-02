@@ -90,6 +90,7 @@ export function useDashboardSocket(userId: number | undefined) {
       "device_status",
       "new_sms",
       "sms_status_update",
+      "bulk_progress",
     ];
 
     events.forEach((event) => {

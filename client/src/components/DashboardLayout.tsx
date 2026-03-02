@@ -22,7 +22,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useUnreadCounts } from "@/hooks/useUnread";
-import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft, Crown, Building2, FileDown } from "lucide-react";
+import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft, Crown, Building2, FileDown, FileText, Zap } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -124,6 +124,8 @@ function DashboardLayoutContent({
     { icon: History, label: "卷宗", path: "/history" },
     ...(user?.role === "superadmin" ? [{ icon: Crown, label: "总后台", path: "/admin" }] : []),
     ...(user?.role === "admin" ? [{ icon: Building2, label: "子后台", path: "/sub-admin" }] : []),
+    { icon: FileText, label: "信笺", path: "/templates" },
+    { icon: Zap, label: "群发", path: "/bulk-send" },
     { icon: FileDown, label: "导出", path: "/export" },
   ];
 

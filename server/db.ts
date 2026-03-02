@@ -1,6 +1,6 @@
 import { eq, and, desc, like, or, gte, lte, sql, asc, count, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, devices, pairingTokens, messages, systemConfig, groups, type InsertDevice, type InsertPairingToken, type InsertMessage, type InsertGroup } from "../drizzle/schema";
+import { InsertUser, users, devices, pairingTokens, messages, systemConfig, groups, smsTemplates, deviceContacts, bulkTasks, type InsertDevice, type InsertPairingToken, type InsertMessage, type InsertGroup, type InsertSmsTemplate, type InsertDeviceContact, type InsertBulkTask } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -640,4 +640,135 @@ export async function getGroupAllocatedDevices(groupId: number) {
     .from(users)
     .where(and(eq(users.groupId, groupId), eq(users.role, "user")));
   return result[0]?.total ?? 0;
+}
+
+// ─── SMS Template Queries ───
+
+export async function getTemplatesByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(smsTemplates).where(eq(smsTemplates.userId, userId)).orderBy(asc(smsTemplates.sortOrder), desc(smsTemplates.createdAt));
+}
+
+export async function getTemplateById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(smsTemplates).where(eq(smsTemplates.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createTemplate(data: InsertSmsTemplate) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(smsTemplates).values(data);
+  return { id: Number(result[0].insertId), ...data };
+}
+
+export async function updateTemplate(id: number, data: Partial<InsertSmsTemplate>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(smsTemplates).set(data).where(eq(smsTemplates.id, id));
+}
+
+export async function deleteTemplate(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(smsTemplates).where(eq(smsTemplates.id, id));
+}
+
+// ─── Device Contact Queries ───
+
+export async function getContactsByDeviceId(deviceId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(deviceContacts).where(eq(deviceContacts.deviceId, deviceId)).orderBy(desc(deviceContacts.createdAt));
+}
+
+export async function getContactCountByDeviceId(deviceId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ count: sql<number>`count(*)` }).from(deviceContacts).where(eq(deviceContacts.deviceId, deviceId));
+  return result[0]?.count ?? 0;
+}
+
+export async function importContacts(userId: number, deviceId: number, contacts: { name: string; phoneNumber: string }[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (contacts.length === 0) return 0;
+
+  // Get existing phone numbers for this device to deduplicate
+  const existing = await db.select({ phoneNumber: deviceContacts.phoneNumber })
+    .from(deviceContacts)
+    .where(eq(deviceContacts.deviceId, deviceId));
+  const existingSet = new Set(existing.map(e => e.phoneNumber));
+
+  const newContacts = contacts.filter(c => !existingSet.has(c.phoneNumber));
+  if (newContacts.length === 0) return 0;
+
+  await db.insert(deviceContacts).values(
+    newContacts.map(c => ({
+      userId,
+      deviceId,
+      name: c.name,
+      phoneNumber: c.phoneNumber,
+    }))
+  );
+  return newContacts.length;
+}
+
+export async function clearContactsByDeviceId(deviceId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(deviceContacts).where(eq(deviceContacts.deviceId, deviceId));
+}
+
+export async function deleteContact(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(deviceContacts).where(eq(deviceContacts.id, id));
+}
+
+// ─── Bulk Task Queries ───
+
+export async function createBulkTask(data: InsertBulkTask) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(bulkTasks).values(data);
+  const id = Number(result[0].insertId);
+  const rows = await db.select().from(bulkTasks).where(eq(bulkTasks.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function getBulkTaskById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(bulkTasks).where(eq(bulkTasks.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getBulkTasksByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(bulkTasks).where(eq(bulkTasks.userId, userId)).orderBy(desc(bulkTasks.createdAt));
+}
+
+export async function getRunningTaskByDeviceId(deviceId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(bulkTasks)
+    .where(and(eq(bulkTasks.deviceId, deviceId), eq(bulkTasks.status, "running")))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function updateBulkTask(id: number, data: Partial<InsertBulkTask>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(bulkTasks).set(data).where(eq(bulkTasks.id, id));
+}
+
+export async function deleteBulkTask(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(bulkTasks).where(eq(bulkTasks.id, id));
 }

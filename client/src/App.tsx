@@ -14,6 +14,8 @@ import Login from "./pages/Login";
 import Admin from "./pages/Admin";
 import SubAdmin from "./pages/SubAdmin";
 import ExportNumbers from "./pages/ExportNumbers";
+import Templates from "./pages/Templates";
+import BulkSend from "./pages/BulkSend";
 
 function Router() {
   return (
@@ -27,6 +29,8 @@ function Router() {
       <Route path={"/admin"} component={Admin} />
       <Route path={"/sub-admin"} component={SubAdmin} />
       <Route path={"/export"} component={ExportNumbers} />
+      <Route path={"/templates"} component={Templates} />
+      <Route path={"/bulk-send"} component={BulkSend} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

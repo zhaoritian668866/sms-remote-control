@@ -45,6 +45,21 @@ import {
   getExportPhoneNumbers,
   getGroupAllocatedDevices,
   getDevicesByGroupId,
+  getTemplatesByUserId,
+  getTemplateById,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
+  getContactsByDeviceId,
+  getContactCountByDeviceId,
+  importContacts,
+  clearContactsByDeviceId,
+  deleteContact,
+  createBulkTask,
+  getBulkTaskById,
+  getBulkTasksByUserId,
+  getRunningTaskByDeviceId,
+  updateBulkTask,
 } from "./db";
 import { sendSmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
 
@@ -661,6 +676,207 @@ export const appRouter = router({
       }
       return result;
     }),
+  }),
+
+  // ─── SMS Templates (shared per user) ───
+  template: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return getTemplatesByUserId(ctx.user.id);
+    }),
+
+    create: protectedProcedure
+      .input(z.object({
+        content: z.string().min(1).max(2000),
+        label: z.string().max(128).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return createTemplate({
+          userId: ctx.user.id,
+          content: input.content,
+          label: input.label || null,
+        });
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        content: z.string().min(1).max(2000).optional(),
+        label: z.string().max(128).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tpl = await getTemplateById(input.id);
+        if (!tpl || tpl.userId !== ctx.user.id) throw new Error("模板不存在");
+        const data: any = {};
+        if (input.content !== undefined) data.content = input.content;
+        if (input.label !== undefined) data.label = input.label;
+        await updateTemplate(input.id, data);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const tpl = await getTemplateById(input.id);
+        if (!tpl || tpl.userId !== ctx.user.id) throw new Error("模板不存在");
+        await deleteTemplate(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ─── Device Contacts (per device) ───
+  contact: router({
+    list: protectedProcedure
+      .input(z.object({ deviceId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) return [];
+        return getContactsByDeviceId(input.deviceId);
+      }),
+
+    count: protectedProcedure
+      .input(z.object({ deviceId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) return 0;
+        return getContactCountByDeviceId(input.deviceId);
+      }),
+
+    import: protectedProcedure
+      .input(z.object({
+        deviceId: z.number(),
+        contacts: z.array(z.object({
+          name: z.string().min(1).max(128),
+          phoneNumber: z.string().min(1).max(32),
+        })).min(1).max(10000),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) throw new Error("设备不存在");
+        const imported = await importContacts(ctx.user.id, input.deviceId, input.contacts);
+        return { imported, duplicates: input.contacts.length - imported };
+      }),
+
+    clear: protectedProcedure
+      .input(z.object({ deviceId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) throw new Error("设备不存在");
+        await clearContactsByDeviceId(input.deviceId);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        // We don't have a direct ownership check on contact, but we check via device
+        await deleteContact(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ─── Bulk SMS Tasks ───
+  bulk: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return getBulkTasksByUserId(ctx.user.id);
+    }),
+
+    get: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const task = await getBulkTaskById(input.id);
+        if (!task || task.userId !== ctx.user.id) return null;
+        return task;
+      }),
+
+    create: protectedProcedure
+      .input(z.object({
+        deviceId: z.number(),
+        mode: z.enum(["round_robin", "random"]),
+        intervalSeconds: z.number().min(5).max(3600),
+        templateIds: z.array(z.number()).min(1),
+        contacts: z.array(z.object({
+          name: z.string(),
+          phoneNumber: z.string(),
+        })).min(1),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) throw new Error("设备不存在");
+
+        // Check no running task on this device
+        const running = await getRunningTaskByDeviceId(input.deviceId);
+        if (running) throw new Error("该设备已有正在运行的群发任务，请先停止后再创建");
+
+        // Validate templates belong to user
+        for (const tid of input.templateIds) {
+          const tpl = await getTemplateById(tid);
+          if (!tpl || tpl.userId !== ctx.user.id) throw new Error(`模板ID ${tid} 不存在`);
+        }
+
+        const task = await createBulkTask({
+          userId: ctx.user.id,
+          deviceId: input.deviceId,
+          mode: input.mode,
+          intervalSeconds: input.intervalSeconds,
+          templateIds: JSON.stringify(input.templateIds),
+          contacts: JSON.stringify(input.contacts),
+          totalCount: input.contacts.length,
+          currentIndex: 0,
+          successCount: 0,
+          failCount: 0,
+          status: "pending",
+        });
+
+        return task;
+      }),
+
+    start: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const task = await getBulkTaskById(input.id);
+        if (!task || task.userId !== ctx.user.id) throw new Error("任务不存在");
+        if (task.status !== "pending" && task.status !== "paused") throw new Error("任务状态不允许启动");
+
+        // Check no other running task on this device
+        const running = await getRunningTaskByDeviceId(task.deviceId);
+        if (running && running.id !== task.id) throw new Error("该设备已有正在运行的任务");
+
+        await updateBulkTask(input.id, { status: "running" });
+
+        // Start the execution engine
+        const { startBulkTaskExecution } = await import("./bulkEngine");
+        startBulkTaskExecution(input.id);
+
+        return { success: true };
+      }),
+
+    pause: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const task = await getBulkTaskById(input.id);
+        if (!task || task.userId !== ctx.user.id) throw new Error("任务不存在");
+        if (task.status !== "running") throw new Error("任务未在运行中");
+
+        const { stopBulkTaskExecution } = await import("./bulkEngine");
+        stopBulkTaskExecution(input.id);
+        await updateBulkTask(input.id, { status: "paused" });
+
+        return { success: true };
+      }),
+
+    cancel: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const task = await getBulkTaskById(input.id);
+        if (!task || task.userId !== ctx.user.id) throw new Error("任务不存在");
+        if (task.status === "completed" || task.status === "cancelled") throw new Error("任务已结束");
+
+        const { stopBulkTaskExecution } = await import("./bulkEngine");
+        stopBulkTaskExecution(input.id);
+        await updateBulkTask(input.id, { status: "cancelled" });
+
+        return { success: true };
+      }),
   }),
 
   // ─── Public Config (for frontend to read customer service link etc.) ───

@@ -122,3 +122,70 @@ export const systemConfig = mysqlTable("system_config", {
 
 export type SystemConfig = typeof systemConfig.$inferSelect;
 export type InsertSystemConfig = typeof systemConfig.$inferInsert;
+
+/**
+ * SMS templates - shared across all devices for a user.
+ * Supports {姓名} variable placeholder.
+ */
+export const smsTemplates = mysqlTable("sms_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  /** Template content, use {姓名} as placeholder */
+  content: text("content").notNull(),
+  /** Optional label for easy identification */
+  label: varchar("label", { length: 128 }),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SmsTemplate = typeof smsTemplates.$inferSelect;
+export type InsertSmsTemplate = typeof smsTemplates.$inferInsert;
+
+/**
+ * Device contacts - imported per device for bulk sending.
+ * Each row is a name + phone number pair bound to a specific device.
+ */
+export const deviceContacts = mysqlTable("device_contacts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  deviceId: int("deviceId").notNull(),
+  name: varchar("name", { length: 128 }).notNull(),
+  phoneNumber: varchar("phoneNumber", { length: 32 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DeviceContact = typeof deviceContacts.$inferSelect;
+export type InsertDeviceContact = typeof deviceContacts.$inferInsert;
+
+/**
+ * Bulk SMS tasks - each task sends messages to a list of contacts via one device.
+ */
+export const bulkTasks = mysqlTable("bulk_tasks", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  deviceId: int("deviceId").notNull(),
+  /** Sending mode: round_robin (轮流) or random (随机) */
+  mode: mysqlEnum("mode", ["round_robin", "random"]).default("round_robin").notNull(),
+  /** Interval between each SMS in seconds */
+  intervalSeconds: int("intervalSeconds").default(10).notNull(),
+  /** JSON array of template IDs to use */
+  templateIds: text("templateIds").notNull(),
+  /** JSON array of contact objects [{name, phoneNumber}] */
+  contacts: text("contacts").notNull(),
+  /** Total number of contacts to send */
+  totalCount: int("totalCount").default(0).notNull(),
+  /** Current index (how many have been processed) */
+  currentIndex: int("currentIndex").default(0).notNull(),
+  /** Number of successfully sent */
+  successCount: int("successCount").default(0).notNull(),
+  /** Number of failed sends */
+  failCount: int("failCount").default(0).notNull(),
+  /** Task status */
+  status: mysqlEnum("status", ["pending", "running", "paused", "completed", "cancelled"]).default("pending").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type BulkTask = typeof bulkTasks.$inferSelect;
+export type InsertBulkTask = typeof bulkTasks.$inferInsert;
