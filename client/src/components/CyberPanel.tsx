@@ -1,87 +1,51 @@
 import { cn } from "@/lib/utils";
 
-interface CyberPanelProps {
+interface InkPanelProps {
   title?: string;
   subtitle?: string;
   children: React.ReactNode;
   className?: string;
-  accentColor?: "cyan" | "pink" | "purple";
   noPadding?: boolean;
 }
-
-const accentColors = {
-  cyan: {
-    border: "border-neon-cyan/20",
-    cornerBorder: "border-neon-cyan",
-    title: "text-neon-cyan",
-    glow: "neon-glow-cyan",
-    line: "from-transparent via-neon-cyan to-transparent",
-    topLine: "bg-neon-cyan/60",
-  },
-  pink: {
-    border: "border-neon-pink/20",
-    cornerBorder: "border-neon-pink",
-    title: "text-neon-pink",
-    glow: "neon-glow-pink",
-    line: "from-transparent via-neon-pink to-transparent",
-    topLine: "bg-neon-pink/60",
-  },
-  purple: {
-    border: "border-neon-purple/20",
-    cornerBorder: "border-neon-purple",
-    title: "text-neon-purple",
-    glow: "",
-    line: "from-transparent via-neon-purple to-transparent",
-    topLine: "bg-neon-purple/60",
-  },
-};
 
 export function CyberPanel({
   title,
   subtitle,
   children,
   className,
-  accentColor = "cyan",
   noPadding = false,
-}: CyberPanelProps) {
-  const colors = accentColors[accentColor];
-
+}: InkPanelProps) {
   return (
     <div
       className={cn(
-        "relative bg-card/80 backdrop-blur-sm",
-        colors.border,
-        "border",
+        "relative bg-card/80 backdrop-blur-sm border border-foreground/10",
         className
       )}
     >
-      {/* Top line */}
-      <div className={cn("absolute top-0 left-0 right-0 h-px bg-gradient-to-r", colors.line)} />
+      {/* 顶部墨线 */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-foreground/20 to-transparent" />
 
-      {/* Corner brackets */}
-      <div className={cn("absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2", colors.cornerBorder)} />
-      <div className={cn("absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2", colors.cornerBorder)} />
-      <div className={cn("absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2", colors.cornerBorder)} />
-      <div className={cn("absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2", colors.cornerBorder)} />
+      {/* 四角装饰 */}
+      <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-foreground/30" />
+      <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-foreground/30" />
+      <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-foreground/30" />
+      <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-foreground/30" />
 
-      {/* Header */}
+      {/* 标题 */}
       {title && (
-        <div className="px-4 pt-3 pb-2 border-b border-border/50">
-          <div className="flex items-center gap-2">
-            <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse-neon", accentColor === "cyan" ? "bg-neon-cyan" : accentColor === "pink" ? "bg-neon-pink" : "bg-neon-purple")} />
-            <h3 className={cn("font-display text-sm font-bold tracking-wider uppercase", colors.title, colors.glow)}>
-              {title}
-            </h3>
-          </div>
+        <div className="px-4 pt-3 pb-2 border-b border-foreground/10">
+          <h3 className="font-serif text-sm font-medium tracking-wider text-foreground">
+            {title}
+          </h3>
           {subtitle && (
-            <p className="text-xs text-muted-foreground font-mono mt-1 pl-3.5">
+            <p className="text-xs text-muted-foreground font-body mt-1">
               {subtitle}
             </p>
           )}
         </div>
       )}
 
-      {/* Content */}
+      {/* 内容 */}
       <div className={noPadding ? "" : "p-4"}>
         {children}
       </div>
@@ -95,11 +59,11 @@ export function CyberStatusDot({ online }: { online: boolean }) {
       <div
         className={cn(
           "w-2 h-2 rounded-full",
-          online ? "bg-neon-green" : "bg-destructive"
+          online ? "bg-jade" : "bg-muted-foreground/40"
         )}
       />
       {online && (
-        <div className="absolute w-2 h-2 rounded-full bg-neon-green animate-ping opacity-75" />
+        <div className="absolute w-2 h-2 rounded-full bg-jade animate-ping opacity-50" />
       )}
     </div>
   );
@@ -109,27 +73,24 @@ export function CyberStatCard({
   label,
   value,
   icon,
-  accentColor = "cyan",
 }: {
   label: string;
   value: string | number;
   icon?: React.ReactNode;
-  accentColor?: "cyan" | "pink" | "purple";
+  accentColor?: string;
 }) {
-  const colors = accentColors[accentColor];
-
   return (
-    <div className={cn("relative bg-card/60 border p-4", colors.border)}>
-      <div className={cn("absolute top-0 left-0 w-2 h-2 border-t border-l", colors.cornerBorder)} />
-      <div className={cn("absolute top-0 right-0 w-2 h-2 border-t border-r", colors.cornerBorder)} />
-      <div className={cn("absolute bottom-0 left-0 w-2 h-2 border-b border-l", colors.cornerBorder)} />
-      <div className={cn("absolute bottom-0 right-0 w-2 h-2 border-b border-r", colors.cornerBorder)} />
+    <div className="relative bg-card/60 border border-foreground/10 p-4">
+      <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-foreground/20" />
+      <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-foreground/20" />
+      <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-foreground/20" />
+      <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-foreground/20" />
 
       <div className="flex items-center gap-2 mb-2">
-        {icon && <span className={colors.title}>{icon}</span>}
-        <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider">{label}</span>
+        {icon && <span className="text-muted-foreground">{icon}</span>}
+        <span className="text-xs font-body text-muted-foreground tracking-wider">{label}</span>
       </div>
-      <div className={cn("text-2xl font-display font-bold", colors.title, colors.glow)}>
+      <div className="text-2xl font-serif font-bold text-foreground">
         {value}
       </div>
     </div>

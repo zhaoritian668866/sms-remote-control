@@ -40,88 +40,91 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  /* Cyberpunk custom colors */
-  --color-neon-pink: oklch(0.7 0.25 350);
-  --color-neon-cyan: oklch(0.85 0.18 195);
-  --color-neon-purple: oklch(0.6 0.25 300);
-  --color-neon-green: oklch(0.8 0.2 145);
-  --color-cyber-dark: oklch(0.08 0.01 280);
-  --color-cyber-darker: oklch(0.05 0.01 280);
-  --font-display: 'Orbitron', sans-serif;
-  --font-mono: 'Share Tech Mono', monospace;
-  --font-body: 'Rajdhani', sans-serif;
+  /* 古风水墨色彩 */
+  --color-ink: oklch(0.15 0.005 250);
+  --color-ink-light: oklch(0.35 0.005 250);
+  --color-ink-faint: oklch(0.55 0.005 250);
+  --color-paper: oklch(0.95 0.005 90);
+  --color-paper-dark: oklch(0.88 0.008 85);
+  --color-vermilion: oklch(0.55 0.18 25);
+  --color-jade: oklch(0.55 0.08 165);
+  --color-gold: oklch(0.7 0.1 85);
+  /* 字体 */
+  --font-display: 'Ma Shan Zheng', 'ZCOOL XiaoWei', cursive;
+  --font-serif: 'Noto Serif SC', serif;
+  --font-body: 'Noto Sans SC', sans-serif;
 }
 
 :root {
   --radius: 0.25rem;
-  --background: oklch(0.08 0.01 280);
-  --foreground: oklch(0.9 0.01 210);
-  --card: oklch(0.12 0.015 280);
-  --card-foreground: oklch(0.9 0.01 210);
-  --popover: oklch(0.12 0.015 280);
-  --popover-foreground: oklch(0.9 0.01 210);
-  --primary: oklch(0.85 0.18 195);
-  --primary-foreground: oklch(0.08 0.01 280);
-  --secondary: oklch(0.15 0.02 280);
-  --secondary-foreground: oklch(0.85 0.18 195);
-  --muted: oklch(0.18 0.015 280);
-  --muted-foreground: oklch(0.6 0.03 210);
-  --accent: oklch(0.7 0.25 350);
-  --accent-foreground: oklch(0.98 0.01 0);
-  --destructive: oklch(0.65 0.25 25);
-  --destructive-foreground: oklch(0.98 0.01 0);
-  --border: oklch(0.25 0.03 280);
-  --input: oklch(0.2 0.02 280);
-  --ring: oklch(0.85 0.18 195);
-  --chart-1: oklch(0.85 0.18 195);
-  --chart-2: oklch(0.7 0.25 350);
-  --chart-3: oklch(0.6 0.25 300);
-  --chart-4: oklch(0.8 0.2 145);
-  --chart-5: oklch(0.75 0.15 60);
-  --sidebar: oklch(0.1 0.015 280);
-  --sidebar-foreground: oklch(0.85 0.18 195);
-  --sidebar-primary: oklch(0.85 0.18 195);
-  --sidebar-primary-foreground: oklch(0.08 0.01 280);
-  --sidebar-accent: oklch(0.15 0.02 280);
-  --sidebar-accent-foreground: oklch(0.85 0.18 195);
-  --sidebar-border: oklch(0.25 0.03 280);
-  --sidebar-ring: oklch(0.85 0.18 195);
+  --background: oklch(0.08 0.005 250);
+  --foreground: oklch(0.88 0.005 90);
+  --card: oklch(0.12 0.005 250);
+  --card-foreground: oklch(0.88 0.005 90);
+  --popover: oklch(0.12 0.005 250);
+  --popover-foreground: oklch(0.88 0.005 90);
+  --primary: oklch(0.88 0.005 90);
+  --primary-foreground: oklch(0.08 0.005 250);
+  --secondary: oklch(0.18 0.005 250);
+  --secondary-foreground: oklch(0.78 0.005 90);
+  --muted: oklch(0.18 0.005 250);
+  --muted-foreground: oklch(0.55 0.005 250);
+  --accent: oklch(0.55 0.18 25);
+  --accent-foreground: oklch(0.95 0.005 90);
+  --destructive: oklch(0.55 0.2 25);
+  --destructive-foreground: oklch(0.95 0.005 90);
+  --border: oklch(0.25 0.005 250);
+  --input: oklch(0.18 0.005 250);
+  --ring: oklch(0.55 0.005 250);
+  --chart-1: oklch(0.88 0.005 90);
+  --chart-2: oklch(0.55 0.18 25);
+  --chart-3: oklch(0.55 0.08 165);
+  --chart-4: oklch(0.7 0.1 85);
+  --chart-5: oklch(0.55 0.005 250);
+  --sidebar: oklch(0.06 0.005 250);
+  --sidebar-foreground: oklch(0.78 0.005 90);
+  --sidebar-primary: oklch(0.88 0.005 90);
+  --sidebar-primary-foreground: oklch(0.08 0.005 250);
+  --sidebar-accent: oklch(0.15 0.005 250);
+  --sidebar-accent-foreground: oklch(0.88 0.005 90);
+  --sidebar-border: oklch(0.2 0.005 250);
+  --sidebar-ring: oklch(0.55 0.005 250);
 }
 
 .dark {
   --radius: 0.25rem;
-  --background: oklch(0.08 0.01 280);
-  --foreground: oklch(0.9 0.01 210);
-  --card: oklch(0.12 0.015 280);
-  --card-foreground: oklch(0.9 0.01 210);
-  --popover: oklch(0.12 0.015 280);
-  --popover-foreground: oklch(0.9 0.01 210);
-  --primary: oklch(0.85 0.18 195);
-  --primary-foreground: oklch(0.08 0.01 280);
-  --secondary: oklch(0.15 0.02 280);
-  --secondary-foreground: oklch(0.85 0.18 195);
-  --muted: oklch(0.18 0.015 280);
-  --muted-foreground: oklch(0.6 0.03 210);
-  --accent: oklch(0.7 0.25 350);
-  --accent-foreground: oklch(0.98 0.01 0);
-  --destructive: oklch(0.65 0.25 25);
-  --destructive-foreground: oklch(0.98 0.01 0);
-  --border: oklch(0.25 0.03 280);
-  --input: oklch(0.2 0.02 280);
-  --ring: oklch(0.85 0.18 195);
-  --chart-1: oklch(0.85 0.18 195);
-  --chart-2: oklch(0.7 0.25 350);
-  --chart-3: oklch(0.6 0.25 300);
-  --chart-4: oklch(0.8 0.2 145);
-  --chart-5: oklch(0.75 0.15 60);
-  --sidebar: oklch(0.1 0.015 280);
-  --sidebar-foreground: oklch(0.85 0.18 195);
-  --sidebar-primary: oklch(0.85 0.18 195);
-  --sidebar-primary-foreground: oklch(0.08 0.01 280);
-  --sidebar-accent: oklch(0.15 0.02 280);
-  --sidebar-accent-foreground: oklch(0.85 0.18 195);
-  --sidebar-border: oklch(0.25 0.03 280);
-  --sidebar-ring: oklch(0.85 0.18 195);
+  --background: oklch(0.08 0.005 250);
+  --foreground: oklch(0.88 0.005 90);
+  --card: oklch(0.12 0.005 250);
+  --card-foreground: oklch(0.88 0.005 90);
+  --popover: oklch(0.12 0.005 250);
+  --popover-foreground: oklch(0.88 0.005 90);
+  --primary: oklch(0.88 0.005 90);
+  --primary-foreground: oklch(0.08 0.005 250);
+  --secondary: oklch(0.18 0.005 250);
+  --secondary-foreground: oklch(0.78 0.005 90);
+  --muted: oklch(0.18 0.005 250);
+  --muted-foreground: oklch(0.55 0.005 250);
+  --accent: oklch(0.55 0.18 25);
+  --accent-foreground: oklch(0.95 0.005 90);
+  --destructive: oklch(0.55 0.2 25);
+  --destructive-foreground: oklch(0.95 0.005 90);
+  --border: oklch(0.25 0.005 250);
+  --input: oklch(0.18 0.005 250);
+  --ring: oklch(0.55 0.005 250);
+  --chart-1: oklch(0.88 0.005 90);
+  --chart-2: oklch(0.55 0.18 25);
+  --chart-3: oklch(0.55 0.08 165);
+  --chart-4: oklch(0.7 0.1 85);
+  --chart-5: oklch(0.55 0.005 250);
+  --sidebar: oklch(0.06 0.005 250);
+  --sidebar-foreground: oklch(0.78 0.005 90);
+  --sidebar-primary: oklch(0.88 0.005 90);
+  --sidebar-primary-foreground: oklch(0.08 0.005 250);
+  --sidebar-accent: oklch(0.15 0.005 250);
+  --sidebar-accent-foreground: oklch(0.88 0.005 90);
+  --sidebar-border: oklch(0.2 0.005 250);
+  --sidebar-ring: oklch(0.55 0.005 250);
 }
 
 @layer base {
@@ -173,93 +176,127 @@
     }
   }
 
-  /* ─── Cyberpunk HUD Effects ─── */
-  .cyber-border {
-    border: 1px solid oklch(0.85 0.18 195 / 30%);
+  /* ─── 古风水墨装饰 ─── */
+  .ink-border {
+    border: 1px solid oklch(0.3 0.005 250);
     position: relative;
   }
 
-  .cyber-border::before,
-  .cyber-border::after {
+  .ink-border::before,
+  .ink-border::after {
     content: '';
     position: absolute;
-    width: 12px;
-    height: 12px;
-    border-color: oklch(0.85 0.18 195);
+    width: 16px;
+    height: 16px;
+    border-color: oklch(0.55 0.005 250);
   }
 
-  .cyber-border::before {
+  .ink-border::before {
     top: -1px;
     left: -1px;
     border-top: 2px solid;
     border-left: 2px solid;
   }
 
-  .cyber-border::after {
+  .ink-border::after {
     bottom: -1px;
     right: -1px;
     border-bottom: 2px solid;
     border-right: 2px solid;
   }
 
-  .neon-glow-cyan {
-    text-shadow: 0 0 7px oklch(0.85 0.18 195), 0 0 20px oklch(0.85 0.18 195 / 50%), 0 0 40px oklch(0.85 0.18 195 / 30%);
-  }
-
-  .neon-glow-pink {
-    text-shadow: 0 0 7px oklch(0.7 0.25 350), 0 0 20px oklch(0.7 0.25 350 / 50%), 0 0 40px oklch(0.7 0.25 350 / 30%);
-  }
-
-  .cyber-card {
-    background: oklch(0.12 0.015 280);
-    border: 1px solid oklch(0.85 0.18 195 / 20%);
+  .ink-card {
+    background: oklch(0.12 0.005 250);
+    border: 1px solid oklch(0.25 0.005 250);
     position: relative;
-    overflow: hidden;
   }
 
-  .cyber-card::before {
+  .ink-card::before {
     content: '';
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     height: 1px;
-    background: linear-gradient(90deg, transparent, oklch(0.85 0.18 195 / 60%), transparent);
+    background: linear-gradient(90deg, transparent, oklch(0.4 0.005 250), transparent);
   }
 
-  .cyber-scanline {
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      oklch(0.85 0.18 195 / 3%) 2px,
-      oklch(0.85 0.18 195 / 3%) 4px
-    );
-    pointer-events: none;
+  /* 印章效果 */
+  .seal {
+    color: oklch(0.55 0.18 25);
+    border: 2px solid oklch(0.55 0.18 25);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: 'Ma Shan Zheng', cursive;
+    transform: rotate(-5deg);
+    display: inline-block;
   }
 
-  .cyber-grid-bg {
+  /* 水墨晕染背景 */
+  .ink-wash-bg {
     background-image:
-      linear-gradient(oklch(0.85 0.18 195 / 5%) 1px, transparent 1px),
-      linear-gradient(90deg, oklch(0.85 0.18 195 / 5%) 1px, transparent 1px);
-    background-size: 40px 40px;
+      radial-gradient(ellipse at 20% 50%, oklch(0.15 0.005 250) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 20%, oklch(0.13 0.005 250) 0%, transparent 40%),
+      radial-gradient(ellipse at 50% 80%, oklch(0.11 0.005 250) 0%, transparent 45%);
   }
 
-  @keyframes pulse-neon {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
+  /* 竖线分隔 */
+  .ink-divider {
+    width: 1px;
+    background: linear-gradient(180deg, transparent, oklch(0.35 0.005 250), transparent);
   }
 
-  .animate-pulse-neon {
-    animation: pulse-neon 2s ease-in-out infinite;
+  /* 横线分隔 */
+  .ink-line {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, oklch(0.35 0.005 250), transparent);
   }
 
-  @keyframes scan-line {
-    0% { transform: translateY(-100%); }
-    100% { transform: translateY(100vh); }
+  /* 微信风格消息气泡 */
+  .bubble-incoming {
+    background: oklch(0.16 0.005 250);
+    border: 1px solid oklch(0.25 0.005 250);
+    border-radius: 2px 12px 12px 12px;
+    position: relative;
   }
 
-  .animate-scan {
-    animation: scan-line 8s linear infinite;
+  .bubble-outgoing {
+    background: oklch(0.2 0.01 165);
+    border: 1px solid oklch(0.3 0.02 165);
+    border-radius: 12px 2px 12px 12px;
+    position: relative;
+  }
+
+  /* 滚动条古风 */
+  ::-webkit-scrollbar {
+    width: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: oklch(0.1 0.005 250);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(0.3 0.005 250);
+    border-radius: 2px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.4 0.005 250);
+  }
+
+  @keyframes ink-fade {
+    0% { opacity: 0; transform: translateY(8px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate-ink-fade {
+    animation: ink-fade 0.4s ease-out;
+  }
+
+  @keyframes brush-stroke {
+    0% { width: 0; }
+    100% { width: 100%; }
+  }
+
+  .animate-brush {
+    animation: brush-stroke 0.6s ease-out;
   }
 }

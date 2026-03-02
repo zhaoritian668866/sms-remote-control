@@ -38,64 +38,60 @@ export default function Home() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header */}
+        {/* 标题 */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-display font-bold tracking-wider text-neon-cyan neon-glow-cyan">
-              SYSTEM DASHBOARD
+            <h1 className="text-2xl font-display tracking-widest text-foreground">
+              总堂概览
             </h1>
-            <p className="text-sm font-mono text-muted-foreground mt-1">
-              // REAL-TIME DEVICE MONITORING & SMS CONTROL
+            <p className="text-sm font-body text-muted-foreground mt-1">
+              实时监控所有信使与传书动态
             </p>
           </div>
           <div className="flex items-center gap-2">
             <CyberStatusDot online={isConnected} />
-            <span className="text-xs font-mono text-muted-foreground">
-              {isConnected ? "LINK ACTIVE" : "LINK DOWN"}
+            <span className="text-xs font-body text-muted-foreground">
+              {isConnected ? "通道畅通" : "通道断开"}
             </span>
           </div>
         </div>
 
-        {/* Stats Grid */}
+        {/* 统计卡片 */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <CyberStatCard
-            label="TOTAL DEVICES"
+            label="信使总数"
             value={totalCount}
             icon={<Smartphone className="w-4 h-4" />}
-            accentColor="cyan"
           />
           <CyberStatCard
-            label="ONLINE"
+            label="在线信使"
             value={onlineCount}
             icon={<Wifi className="w-4 h-4" />}
-            accentColor="cyan"
           />
           <CyberStatCard
-            label="RECENT SMS"
+            label="近期传书"
             value={messageCount}
             icon={<MessageSquare className="w-4 h-4" />}
-            accentColor="pink"
           />
           <CyberStatCard
-            label="SYSTEM STATUS"
-            value={isConnected ? "ACTIVE" : "STANDBY"}
+            label="系统状态"
+            value={isConnected ? "运行中" : "待命"}
             icon={<Activity className="w-4 h-4" />}
-            accentColor={isConnected ? "cyan" : "purple"}
           />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Device List */}
-          <CyberPanel title="CONNECTED DEVICES" subtitle="Active device connections">
+          {/* 设备列表 */}
+          <CyberPanel title="信使列表" subtitle="已绑定的设备">
             {!deviceList || deviceList.length === 0 ? (
               <div className="text-center py-8">
-                <Smartphone className="w-10 h-10 text-neon-cyan/30 mx-auto mb-3" />
-                <p className="text-sm font-mono text-muted-foreground">NO DEVICES CONNECTED</p>
+                <Smartphone className="w-10 h-10 text-muted-foreground/20 mx-auto mb-3" />
+                <p className="text-sm font-body text-muted-foreground">尚无信使加入</p>
                 <button
                   onClick={() => setLocation("/devices")}
-                  className="mt-3 text-xs font-mono text-neon-cyan hover:text-neon-cyan/80 underline underline-offset-4"
+                  className="mt-3 text-xs font-serif text-foreground/60 hover:text-foreground underline underline-offset-4"
                 >
-                  [ ADD DEVICE ]
+                  前往添加信使
                 </button>
               </div>
             ) : (
@@ -103,26 +99,26 @@ export default function Home() {
                 {deviceList.slice(0, 5).map(device => (
                   <div
                     key={device.id}
-                    className="flex items-center justify-between p-3 bg-background/50 border border-border/50 hover:border-neon-cyan/30 transition-colors cursor-pointer"
+                    className="flex items-center justify-between p-3 bg-background/50 border border-foreground/5 hover:border-foreground/15 transition-colors cursor-pointer"
                     onClick={() => setLocation("/devices")}
                   >
                     <div className="flex items-center gap-3">
                       <CyberStatusDot online={device.isOnline} />
                       <div>
-                        <p className="text-sm font-body text-foreground">{device.name}</p>
-                        <p className="text-xs font-mono text-muted-foreground">
+                        <p className="text-sm font-serif text-foreground">{device.name}</p>
+                        <p className="text-xs font-body text-muted-foreground">
                           {device.phoneModel || device.deviceId.slice(0, 12)}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4 text-xs font-mono text-muted-foreground">
+                    <div className="flex items-center gap-4 text-xs font-body text-muted-foreground">
                       {device.batteryLevel != null && (
-                        <span className={device.batteryLevel < 20 ? "text-destructive" : ""}>
-                          BAT: {device.batteryLevel}%
+                        <span className={device.batteryLevel < 20 ? "text-vermilion" : ""}>
+                          电量 {device.batteryLevel}%
                         </span>
                       )}
                       {device.signalStrength != null && (
-                        <span>SIG: {device.signalStrength}%</span>
+                        <span>信号 {device.signalStrength}%</span>
                       )}
                     </div>
                   </div>
@@ -130,35 +126,35 @@ export default function Home() {
                 {deviceList.length > 5 && (
                   <button
                     onClick={() => setLocation("/devices")}
-                    className="w-full text-center text-xs font-mono text-neon-cyan hover:text-neon-cyan/80 py-2"
+                    className="w-full text-center text-xs font-serif text-muted-foreground hover:text-foreground py-2"
                   >
-                    [ VIEW ALL {deviceList.length} DEVICES ]
+                    查看全部 {deviceList.length} 位信使
                   </button>
                 )}
               </div>
             )}
           </CyberPanel>
 
-          {/* Recent Messages */}
-          <CyberPanel title="RECENT MESSAGES" subtitle="Latest SMS activity" accentColor="pink">
+          {/* 近期消息 */}
+          <CyberPanel title="近期传书" subtitle="最新短信动态">
             {!recentMessages || recentMessages.length === 0 ? (
               <div className="text-center py-8">
-                <MessageSquare className="w-10 h-10 text-neon-pink/30 mx-auto mb-3" />
-                <p className="text-sm font-mono text-muted-foreground">NO MESSAGES YET</p>
+                <MessageSquare className="w-10 h-10 text-muted-foreground/20 mx-auto mb-3" />
+                <p className="text-sm font-body text-muted-foreground">暂无传书记录</p>
               </div>
             ) : (
               <div className="space-y-2">
                 {recentMessages.slice(0, 5).map(msg => (
                   <div
                     key={msg.id}
-                    className="p-3 bg-background/50 border border-border/50 hover:border-neon-pink/30 transition-colors cursor-pointer"
+                    className="p-3 bg-background/50 border border-foreground/5 hover:border-foreground/15 transition-colors cursor-pointer"
                     onClick={() => setLocation("/messages")}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-mono text-neon-pink">
-                        {msg.direction === "incoming" ? "◀ IN" : "▶ OUT"} {msg.phoneNumber}
+                      <span className="text-xs font-body text-muted-foreground">
+                        {msg.direction === "incoming" ? "◁ 收" : "▷ 发"} {msg.phoneNumber}
                       </span>
-                      <span className="text-xs font-mono text-muted-foreground">
+                      <span className="text-xs font-body text-muted-foreground/60">
                         {new Date(msg.smsTimestamp).toLocaleString("zh-CN")}
                       </span>
                     </div>
@@ -168,9 +164,9 @@ export default function Home() {
                 {recentMessages.length > 5 && (
                   <button
                     onClick={() => setLocation("/messages")}
-                    className="w-full text-center text-xs font-mono text-neon-pink hover:text-neon-pink/80 py-2"
+                    className="w-full text-center text-xs font-serif text-muted-foreground hover:text-foreground py-2"
                   >
-                    [ VIEW ALL MESSAGES ]
+                    查看全部传书
                   </button>
                 )}
               </div>
@@ -178,20 +174,20 @@ export default function Home() {
           </CyberPanel>
         </div>
 
-        {/* System Info */}
-        <CyberPanel title="SYSTEM INFO" subtitle="Connection & protocol details" accentColor="purple">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-mono">
+        {/* 系统信息 */}
+        <CyberPanel title="系统信息" subtitle="连接与协议详情">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-body">
             <div>
-              <span className="text-muted-foreground">PROTOCOL:</span>
-              <span className="text-neon-purple ml-2">WebSocket v4.x</span>
+              <span className="text-muted-foreground">通信协议：</span>
+              <span className="text-foreground/80 ml-1">WebSocket</span>
             </div>
             <div>
-              <span className="text-muted-foreground">MAX DEVICES:</span>
-              <span className="text-neon-purple ml-2">30</span>
+              <span className="text-muted-foreground">最大信使数：</span>
+              <span className="text-foreground/80 ml-1">30</span>
             </div>
             <div>
-              <span className="text-muted-foreground">ENCRYPTION:</span>
-              <span className="text-neon-purple ml-2">TLS 1.3</span>
+              <span className="text-muted-foreground">加密方式：</span>
+              <span className="text-foreground/80 ml-1">TLS 1.3</span>
             </div>
           </div>
         </CyberPanel>

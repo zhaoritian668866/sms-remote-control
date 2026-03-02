@@ -8,7 +8,7 @@ import Home from "./pages/Home";
 import Devices from "./pages/Devices";
 import Messages from "./pages/Messages";
 import History from "./pages/History";
-import Docs from "./pages/Docs";
+import Chat from "./pages/Chat";
 
 function Router() {
   return (
@@ -17,7 +17,7 @@ function Router() {
       <Route path={"/devices"} component={Devices} />
       <Route path={"/messages"} component={Messages} />
       <Route path={"/history"} component={History} />
-      <Route path={"/docs"} component={Docs} />
+      <Route path={"/chat/:id"} component={Chat} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -29,16 +29,7 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
-          <Toaster
-            toastOptions={{
-              style: {
-                background: "oklch(0.12 0.015 280)",
-                border: "1px solid oklch(0.85 0.18 195 / 30%)",
-                color: "oklch(0.9 0.01 210)",
-                fontFamily: "'Share Tech Mono', monospace",
-              },
-            }}
-          />
+          <Toaster />
           <Router />
         </TooltipProvider>
       </ThemeProvider>
