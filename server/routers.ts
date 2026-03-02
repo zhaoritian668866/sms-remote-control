@@ -1,7 +1,7 @@
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, adminProcedure, superadminProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import QRCode from "qrcode";
@@ -30,6 +30,21 @@ import {
   getConfigValue,
   setConfigValue,
   getAllConfigs,
+  createGroup,
+  getGroupById,
+  getGroupByCode,
+  getAllGroups,
+  updateGroup,
+  deleteGroup,
+  getGroupDeviceCount,
+  getGroupUserCount,
+  getUsersByGroupId,
+  getGroupStats,
+  getMessagesByGroupId,
+  getAllMessagesForSuperadmin,
+  getExportPhoneNumbers,
+  getGroupAllocatedDevices,
+  getDevicesByGroupId,
 } from "./db";
 import { sendSmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
 
@@ -45,8 +60,18 @@ export const appRouter = router({
         username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_]+$/, "用户名只能包含字母、数字和下划线"),
         password: z.string().min(6).max(64),
         name: z.string().min(1).max(64),
+        groupCode: z.string().min(1).max(32),
       }))
       .mutation(async ({ ctx, input }) => {
+        // Validate group code
+        const group = await getGroupByCode(input.groupCode);
+        if (!group) {
+          throw new Error("用户组标识不存在，请联系管理员获取正确的标识码");
+        }
+        if (!group.isActive) {
+          throw new Error("该用户组已被禁用，请联系管理员");
+        }
+
         const existing = await getUserByUsername(input.username);
         if (existing) {
           throw new Error("该用户名已被注册");
@@ -57,6 +82,7 @@ export const appRouter = router({
           username: input.username,
           passwordHash,
           name: input.name,
+          groupId: group.id,
         });
 
         if (!user) {
@@ -221,6 +247,8 @@ export const appRouter = router({
         token,
         qrDataUrl,
         expiresAt: expiresAt.getTime(),
+        // Also return the raw pairing payload for copy-paste
+        pairingPayload: qrPayload,
       };
     }),
   }),
@@ -290,32 +318,158 @@ export const appRouter = router({
           sendResult: result,
         };
       }),
+
+    /** Export phone numbers with filters */
+    exportNumbers: protectedProcedure
+      .input(z.object({
+        startTime: z.number().optional(),
+        endTime: z.number().optional(),
+        direction: z.enum(["incoming", "outgoing"]).optional(),
+        groupId: z.number().optional(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const role = ctx.user.role;
+
+        if (role === "superadmin") {
+          // Superadmin can export from any group or all
+          return getExportPhoneNumbers({
+            groupId: input.groupId,
+            startTime: input.startTime,
+            endTime: input.endTime,
+            direction: input.direction,
+          });
+        } else if (role === "admin" && ctx.user.groupId) {
+          // Admin can only export from their group
+          return getExportPhoneNumbers({
+            groupId: ctx.user.groupId,
+            startTime: input.startTime,
+            endTime: input.endTime,
+            direction: input.direction,
+          });
+        } else {
+          // Regular user can only export their own
+          return getExportPhoneNumbers({
+            userId: ctx.user.id,
+            startTime: input.startTime,
+            endTime: input.endTime,
+            direction: input.direction,
+          });
+        }
+      }),
   }),
 
-  // ─── Admin Management ───
-  admin: router({
-    stats: adminProcedure.query(async () => {
+  // ─── Superadmin: Total Backend ───
+  superadmin: router({
+    stats: superadminProcedure.query(async () => {
       return getSystemStats();
     }),
 
-    users: adminProcedure.query(async () => {
-      const userList = await getAllUsers();
-      // Get device count for each user
+    // Group (子后台) management
+    groups: superadminProcedure.query(async () => {
+      const groupList = await getAllGroups();
       const result = [];
-      for (const u of userList) {
-        const deviceCount = await getDeviceCountByUserId(u.id);
-        result.push({ ...u, deviceCount });
+      for (const g of groupList) {
+        const userCount = await getGroupUserCount(g.id);
+        const deviceCount = await getGroupDeviceCount(g.id);
+        const allocated = await getGroupAllocatedDevices(g.id);
+        result.push({ ...g, userCount, deviceCount, allocatedDevices: allocated });
       }
       return result;
     }),
 
-    updateUser: adminProcedure
+    createGroup: superadminProcedure
+      .input(z.object({
+        name: z.string().min(1).max(128),
+        groupCode: z.string().min(2).max(32).regex(/^[a-zA-Z0-9_-]+$/, "标识码只能包含字母、数字、下划线和短横线"),
+        maxDevices: z.number().min(1).max(99999),
+      }))
+      .mutation(async ({ input }) => {
+        const existing = await getGroupByCode(input.groupCode);
+        if (existing) {
+          throw new Error("该标识码已存在");
+        }
+        const group = await createGroup({
+          name: input.name,
+          groupCode: input.groupCode,
+          maxDevices: input.maxDevices,
+          isActive: true,
+        });
+        return group;
+      }),
+
+    updateGroup: superadminProcedure
       .input(z.object({
         id: z.number(),
-        maxDevices: z.number().min(0).max(999).optional(),
+        name: z.string().min(1).max(128).optional(),
+        maxDevices: z.number().min(0).max(99999).optional(),
         isActive: z.boolean().optional(),
-        role: z.enum(["user", "admin"]).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const data: any = {};
+        if (input.name !== undefined) data.name = input.name;
+        if (input.maxDevices !== undefined) data.maxDevices = input.maxDevices;
+        if (input.isActive !== undefined) data.isActive = input.isActive;
+        await updateGroup(input.id, data);
+        return { success: true };
+      }),
+
+    // Create admin account for a group
+    createGroupAdmin: superadminProcedure
+      .input(z.object({
+        groupId: z.number(),
+        username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_]+$/),
+        password: z.string().min(6).max(64),
+        name: z.string().min(1).max(64),
+      }))
+      .mutation(async ({ input }) => {
+        const group = await getGroupById(input.groupId);
+        if (!group) throw new Error("用户组不存在");
+
+        const existing = await getUserByUsername(input.username);
+        if (existing) throw new Error("该用户名已被注册");
+
+        const passwordHash = await bcrypt.hash(input.password, 10);
+        const user = await createUserWithPassword({
+          username: input.username,
+          passwordHash,
+          name: input.name,
+          groupId: input.groupId,
+        });
+
+        if (!user) throw new Error("创建失败");
+
+        // Set role to admin
+        await updateUserAdmin(user.id, { role: "admin" });
+        // Link admin to group
+        await updateGroup(input.groupId, { adminUserId: user.id });
+
+        return { success: true, userId: user.id };
+      }),
+
+    // All users management
+    allUsers: superadminProcedure.query(async () => {
+      const userList = await getAllUsers();
+      const result = [];
+      for (const u of userList) {
+        const deviceCount = await getDeviceCountByUserId(u.id);
+        let groupName = null;
+        if (u.groupId) {
+          const group = await getGroupById(u.groupId);
+          groupName = group?.name || null;
+        }
+        result.push({ ...u, deviceCount, groupName });
+      }
+      return result;
+    }),
+
+    updateUser: superadminProcedure
+      .input(z.object({
+        id: z.number(),
+        maxDevices: z.number().min(0).max(99999).optional(),
+        isActive: z.boolean().optional(),
+        role: z.enum(["user", "admin", "superadmin"]).optional(),
         name: z.string().min(1).max(64).optional(),
+        groupId: z.number().nullable().optional(),
       }))
       .mutation(async ({ input }) => {
         const data: any = {};
@@ -323,11 +477,12 @@ export const appRouter = router({
         if (input.isActive !== undefined) data.isActive = input.isActive;
         if (input.role !== undefined) data.role = input.role;
         if (input.name !== undefined) data.name = input.name;
+        if (input.groupId !== undefined) data.groupId = input.groupId;
         await updateUserAdmin(input.id, data);
         return { success: true };
       }),
 
-    resetPassword: adminProcedure
+    resetPassword: superadminProcedure
       .input(z.object({
         id: z.number(),
         newPassword: z.string().min(6).max(64),
@@ -345,12 +500,33 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    // View all messages (cross-group)
+    messages: superadminProcedure
+      .input(z.object({
+        groupId: z.number().optional(),
+        search: z.string().optional(),
+        startTime: z.number().optional(),
+        endTime: z.number().optional(),
+        limit: z.number().min(1).max(500).default(200),
+        offset: z.number().min(0).default(0),
+      }))
+      .query(async ({ input }) => {
+        return getAllMessagesForSuperadmin({
+          groupId: input.groupId,
+          search: input.search,
+          startTime: input.startTime,
+          endTime: input.endTime,
+          limit: input.limit,
+          offset: input.offset,
+        });
+      }),
+
     // System config management
-    getConfigs: adminProcedure.query(async () => {
+    getConfigs: superadminProcedure.query(async () => {
       return getAllConfigs();
     }),
 
-    setConfig: adminProcedure
+    setConfig: superadminProcedure
       .input(z.object({
         key: z.string().min(1).max(128),
         value: z.string().max(4096),
@@ -360,6 +536,131 @@ export const appRouter = router({
         await setConfigValue(input.key, input.value, input.description);
         return { success: true };
       }),
+  }),
+
+  // ─── Admin (子后台): Group Management ───
+  admin: router({
+    stats: adminProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role === "superadmin") {
+        return getSystemStats();
+      }
+      if (!ctx.user.groupId) throw new Error("未绑定用户组");
+      return getGroupStats(ctx.user.groupId);
+    }),
+
+    // List users in my group
+    users: adminProcedure.query(async ({ ctx }) => {
+      if (!ctx.user.groupId) throw new Error("未绑定用户组");
+      const userList = await getUsersByGroupId(ctx.user.groupId);
+      const result = [];
+      for (const u of userList) {
+        const deviceCount = await getDeviceCountByUserId(u.id);
+        result.push({ ...u, deviceCount });
+      }
+      return result;
+    }),
+
+    // Get my group info
+    myGroup: adminProcedure.query(async ({ ctx }) => {
+      if (!ctx.user.groupId) throw new Error("未绑定用户组");
+      const group = await getGroupById(ctx.user.groupId);
+      if (!group) throw new Error("用户组不存在");
+      const allocated = await getGroupAllocatedDevices(ctx.user.groupId);
+      return { ...group, allocatedDevices: allocated };
+    }),
+
+    updateUser: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        maxDevices: z.number().min(0).max(99999).optional(),
+        isActive: z.boolean().optional(),
+        name: z.string().min(1).max(64).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Verify user belongs to admin's group
+        const targetUser = await getUserById(input.id);
+        if (!targetUser) throw new Error("用户不存在");
+        if (targetUser.groupId !== ctx.user.groupId) throw new Error("无权操作此用户");
+        if (targetUser.role !== "user") throw new Error("只能管理一线人员");
+
+        // Check quota allocation if changing maxDevices
+        if (input.maxDevices !== undefined && ctx.user.groupId) {
+          const group = await getGroupById(ctx.user.groupId);
+          if (group) {
+            const currentAllocated = await getGroupAllocatedDevices(ctx.user.groupId);
+            const currentUserMax = targetUser.maxDevices;
+            const newTotal = currentAllocated - currentUserMax + input.maxDevices;
+            if (newTotal > group.maxDevices) {
+              throw new Error(`配额超出用户组上限（组上限: ${group.maxDevices}，已分配: ${currentAllocated - currentUserMax}，本次分配: ${input.maxDevices}）`);
+            }
+          }
+        }
+
+        const data: any = {};
+        if (input.maxDevices !== undefined) data.maxDevices = input.maxDevices;
+        if (input.isActive !== undefined) data.isActive = input.isActive;
+        if (input.name !== undefined) data.name = input.name;
+        await updateUserAdmin(input.id, data);
+        return { success: true };
+      }),
+
+    resetPassword: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        newPassword: z.string().min(6).max(64),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const targetUser = await getUserById(input.id);
+        if (!targetUser) throw new Error("用户不存在");
+        if (targetUser.groupId !== ctx.user.groupId) throw new Error("无权操作此用户");
+        if (targetUser.role !== "user") throw new Error("只能管理一线人员");
+
+        const passwordHash = await bcrypt.hash(input.newPassword, 10);
+        const db = (await import("./db")).getDb();
+        const dbInstance = await db;
+        if (!dbInstance) throw new Error("Database not available");
+        const { users } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        await dbInstance.update(users).set({ passwordHash }).where(eq(users.id, input.id));
+        return { success: true };
+      }),
+
+    // View messages for my group
+    messages: adminProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        startTime: z.number().optional(),
+        endTime: z.number().optional(),
+        limit: z.number().min(1).max(500).default(200),
+        offset: z.number().min(0).default(0),
+      }))
+      .query(async ({ ctx, input }) => {
+        if (!ctx.user.groupId) throw new Error("未绑定用户组");
+        return getMessagesByGroupId(ctx.user.groupId, {
+          search: input.search,
+          startTime: input.startTime,
+          endTime: input.endTime,
+          limit: input.limit,
+          offset: input.offset,
+        });
+      }),
+
+    // Get devices in my group
+    devices: adminProcedure.query(async ({ ctx }) => {
+      if (!ctx.user.groupId) throw new Error("未绑定用户组");
+      const deviceList = await getDevicesByGroupId(ctx.user.groupId);
+      // Enrich with owner info and online status
+      const result = [];
+      for (const d of deviceList) {
+        const owner = await getUserById(d.userId);
+        result.push({
+          ...d,
+          isOnline: isDeviceConnected(d.deviceId),
+          ownerName: owner?.name || owner?.username || "未知",
+        });
+      }
+      return result;
+    }),
   }),
 
   // ─── Public Config (for frontend to read customer service link etc.) ───

@@ -12,6 +12,8 @@ import History from "./pages/History";
 import Chat from "./pages/Chat";
 import Login from "./pages/Login";
 import Admin from "./pages/Admin";
+import SubAdmin from "./pages/SubAdmin";
+import ExportNumbers from "./pages/ExportNumbers";
 
 function Router() {
   return (
@@ -23,6 +25,8 @@ function Router() {
       <Route path={"/history"} component={History} />
       <Route path={"/chat/:id"} component={Chat} />
       <Route path={"/admin"} component={Admin} />
+      <Route path={"/sub-admin"} component={SubAdmin} />
+      <Route path={"/export"} component={ExportNumbers} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

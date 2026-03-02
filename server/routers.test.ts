@@ -17,6 +17,7 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: any[] } {
     passwordHash: null,
     loginMethod: "password",
     role: "admin",
+    groupId: 1,
     maxDevices: 30,
     isActive: true,
     createdAt: new Date(),
@@ -141,9 +142,11 @@ describe("pairing.generate", () => {
     expect(result).toHaveProperty("token");
     expect(result).toHaveProperty("qrDataUrl");
     expect(result).toHaveProperty("expiresAt");
+    expect(result).toHaveProperty("pairingPayload");
     expect(result.token.length).toBe(32);
     expect(result.qrDataUrl).toContain("data:image/png;base64");
     expect(result.expiresAt).toBeGreaterThan(Date.now());
+    expect(result.pairingPayload).toContain(result.token);
   });
 });
 

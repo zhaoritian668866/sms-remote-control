@@ -9,7 +9,7 @@ import { useDashboardSocket } from "@/hooks/useSocket";
 import { useUnreadCounts } from "@/hooks/useUnread";
 import {
   Smartphone, Plus, Trash2, Edit2, Check, X, QrCode,
-  Battery, Signal, Loader2, ChevronRight, AlertTriangle, ExternalLink
+  Battery, Signal, Loader2, ChevronRight, AlertTriangle, ExternalLink, Copy
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
@@ -292,9 +292,28 @@ export default function Devices() {
                     <p className="text-xs font-body text-vermilion">
                       有效期：10 分钟
                     </p>
-                    <p className="text-xs font-body text-muted-foreground/40">
-                      令牌：{generatePairing.data.token.slice(0, 8)}...
+                  </div>
+
+                  {/* 可复制的配对令牌 */}
+                  <div className="w-full mt-2">
+                    <p className="text-xs font-body text-muted-foreground/60 mb-1.5 text-center">
+                      没有摄像头？复制令牌手动输入：
                     </p>
+                    <div className="flex items-center gap-2 bg-background/60 border border-foreground/10 px-3 py-2 rounded">
+                      <code className="flex-1 text-xs font-mono text-foreground/70 break-all select-all">
+                        {generatePairing.data.token}
+                      </code>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(generatePairing.data!.pairingPayload);
+                          toast.success("配对信息已复制到剪贴板");
+                        }}
+                        className="shrink-0 p-1.5 text-muted-foreground/50 hover:text-foreground transition-colors"
+                        title="复制配对信息"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </>
               ) : (

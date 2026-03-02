@@ -1,7 +1,33 @@
 import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, bigint, boolean } from "drizzle-orm/mysql-core";
 
 /**
- * Core user table - self-hosted auth with username/password.
+ * User groups (子后台/用户组) - managed by superadmin.
+ * Each group has a unique code that frontline users use during registration.
+ */
+export const groups = mysqlTable("groups", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Unique invite code for frontline users to bind during registration */
+  groupCode: varchar("groupCode", { length: 32 }).notNull().unique(),
+  /** Display name of the group */
+  name: varchar("name", { length: 128 }).notNull(),
+  /** Total device quota allocated to this group by superadmin */
+  maxDevices: int("maxDevices").default(10).notNull(),
+  /** Whether the group is enabled */
+  isActive: boolean("isActive").default(true).notNull(),
+  /** The admin user who manages this group (set after admin account is created) */
+  adminUserId: int("adminUserId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Group = typeof groups.$inferSelect;
+export type InsertGroup = typeof groups.$inferInsert;
+
+/**
+ * Core user table - three-level role system.
+ * superadmin: Platform owner, manages groups and admins
+ * admin: Group manager, manages frontline users within their group
+ * user: Frontline operator, can only use devices assigned to them
  */
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -11,7 +37,9 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: mysqlEnum("role", ["user", "admin", "superadmin"]).default("user").notNull(),
+  /** The group this user belongs to (null for superadmin) */
+  groupId: int("groupId"),
   /** Maximum number of devices this user can connect */
   maxDevices: int("maxDevices").default(1).notNull(),
   /** Whether the account is enabled */

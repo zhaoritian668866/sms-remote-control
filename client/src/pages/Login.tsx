@@ -16,6 +16,7 @@ export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [groupCode, setGroupCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
   const loginMutation = trpc.auth.login.useMutation({
@@ -57,11 +58,15 @@ export default function Login() {
         toast.error("请填写昵称");
         return;
       }
+      if (!groupCode.trim()) {
+        toast.error("请填写用户组标识码（由管理员提供）");
+        return;
+      }
       if (password.length < 6) {
         toast.error("密码至少6位");
         return;
       }
-      registerMutation.mutate({ username: username.trim(), password, name: name.trim() });
+      registerMutation.mutate({ username: username.trim(), password, name: name.trim(), groupCode: groupCode.trim() });
     } else {
       loginMutation.mutate({ username: username.trim(), password });
     }
@@ -143,19 +148,34 @@ export default function Login() {
           {/* 表单 */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {isRegister && (
-              <div>
-                <label className="block text-xs font-body text-muted-foreground mb-1.5 tracking-wider">
-                  昵称
-                </label>
-                <Input
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="输入昵称"
-                  className="h-10 bg-background/60 border-foreground/10 text-foreground font-body text-sm focus:border-foreground/30"
-                  autoComplete="name"
-                />
-              </div>
+              <>
+                <div>
+                  <label className="block text-xs font-body text-muted-foreground mb-1.5 tracking-wider">
+                    昵称
+                  </label>
+                  <Input
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="输入昵称"
+                    className="h-10 bg-background/60 border-foreground/10 text-foreground font-body text-sm focus:border-foreground/30"
+                    autoComplete="name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-body text-muted-foreground mb-1.5 tracking-wider">
+                    用户组标识码
+                  </label>
+                  <Input
+                    value={groupCode}
+                    onChange={e => setGroupCode(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="由管理员提供的标识码"
+                    className="h-10 bg-background/60 border-foreground/10 text-foreground font-body text-sm focus:border-foreground/30"
+                    autoComplete="off"
+                  />
+                </div>
+              </>
             )}
 
             <div>

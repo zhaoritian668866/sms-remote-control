@@ -1,6 +1,6 @@
-import { eq, and, desc, like, or, gte, lte, sql, asc, count } from "drizzle-orm";
+import { eq, and, desc, like, or, gte, lte, sql, asc, count, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, devices, pairingTokens, messages, systemConfig, type InsertDevice, type InsertPairingToken, type InsertMessage } from "../drizzle/schema";
+import { InsertUser, users, devices, pairingTokens, messages, systemConfig, groups, type InsertDevice, type InsertPairingToken, type InsertMessage, type InsertGroup } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -33,7 +33,7 @@ export async function getUserById(id: number) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function createUserWithPassword(data: { username: string; passwordHash: string; name: string }) {
+export async function createUserWithPassword(data: { username: string; passwordHash: string; name: string; groupId?: number }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const openId = `local_${data.username}_${Date.now()}`;
@@ -44,6 +44,7 @@ export async function createUserWithPassword(data: { username: string; passwordH
     name: data.name,
     loginMethod: "password",
     role: "user",
+    groupId: data.groupId || null,
     maxDevices: 1,
     isActive: true,
     lastSignedIn: new Date(),
@@ -89,8 +90,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.role = user.role;
       updateSet.role = user.role;
     } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
+      values.role = 'superadmin';
+      updateSet.role = 'superadmin';
     }
 
     if (!values.lastSignedIn) {
@@ -127,6 +128,68 @@ export async function updateUserLastSignedIn(id: number) {
   await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, id));
 }
 
+// ─── Group Queries ───
+
+export async function createGroup(data: InsertGroup) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(groups).values(data);
+  const result = await db.select().from(groups).where(eq(groups.groupCode, data.groupCode)).limit(1);
+  return result[0];
+}
+
+export async function getGroupById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(groups).where(eq(groups.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getGroupByCode(code: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(groups).where(eq(groups.groupCode, code)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getAllGroups() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(groups).orderBy(desc(groups.createdAt));
+}
+
+export async function updateGroup(id: number, data: Partial<InsertGroup>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(groups).set(data).where(eq(groups.id, id));
+}
+
+export async function deleteGroup(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(groups).where(eq(groups.id, id));
+}
+
+export async function getGroupDeviceCount(groupId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  // Count all devices owned by users in this group
+  const groupUsers = await db.select({ id: users.id }).from(users).where(eq(users.groupId, groupId));
+  if (groupUsers.length === 0) return 0;
+  const userIds = groupUsers.map(u => u.id);
+  const result = await db.select({ count: sql<number>`count(*)` }).from(devices)
+    .where(sql`${devices.userId} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`);
+  return result[0]?.count ?? 0;
+}
+
+export async function getGroupUserCount(groupId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ count: sql<number>`count(*)` }).from(users)
+    .where(and(eq(users.groupId, groupId), eq(users.role, "user")));
+  return result[0]?.count ?? 0;
+}
+
 // ─── Admin: User Management ───
 
 export async function getAllUsers() {
@@ -138,6 +201,7 @@ export async function getAllUsers() {
     name: users.name,
     email: users.email,
     role: users.role,
+    groupId: users.groupId,
     maxDevices: users.maxDevices,
     isActive: users.isActive,
     createdAt: users.createdAt,
@@ -145,7 +209,24 @@ export async function getAllUsers() {
   }).from(users).orderBy(desc(users.createdAt));
 }
 
-export async function updateUserAdmin(id: number, data: { maxDevices?: number; isActive?: boolean; role?: "user" | "admin"; name?: string }) {
+export async function getUsersByGroupId(groupId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: users.id,
+    username: users.username,
+    name: users.name,
+    email: users.email,
+    role: users.role,
+    groupId: users.groupId,
+    maxDevices: users.maxDevices,
+    isActive: users.isActive,
+    createdAt: users.createdAt,
+    lastSignedIn: users.lastSignedIn,
+  }).from(users).where(eq(users.groupId, groupId)).orderBy(desc(users.createdAt));
+}
+
+export async function updateUserAdmin(id: number, data: { maxDevices?: number; isActive?: boolean; role?: "user" | "admin" | "superadmin"; name?: string; groupId?: number | null }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(users).set(data).where(eq(users.id, id));
@@ -160,15 +241,51 @@ export async function getDeviceCountByUserId(userId: number) {
 
 export async function getSystemStats() {
   const db = await getDb();
-  if (!db) return { totalUsers: 0, totalDevices: 0, totalMessages: 0, onlineDevices: 0 };
+  if (!db) return { totalUsers: 0, totalDevices: 0, totalMessages: 0, onlineDevices: 0, totalGroups: 0 };
   const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(users);
   const [deviceCount] = await db.select({ count: sql<number>`count(*)` }).from(devices);
   const [msgCount] = await db.select({ count: sql<number>`count(*)` }).from(messages);
   const [onlineCount] = await db.select({ count: sql<number>`count(*)` }).from(devices).where(eq(devices.isOnline, true));
+  const [groupCount] = await db.select({ count: sql<number>`count(*)` }).from(groups);
   return {
     totalUsers: userCount?.count ?? 0,
     totalDevices: deviceCount?.count ?? 0,
     totalMessages: msgCount?.count ?? 0,
+    onlineDevices: onlineCount?.count ?? 0,
+    totalGroups: groupCount?.count ?? 0,
+  };
+}
+
+export async function getGroupStats(groupId: number) {
+  const db = await getDb();
+  if (!db) return { totalUsers: 0, totalDevices: 0, totalMessages: 0, onlineDevices: 0 };
+
+  const groupUsers = await db.select({ id: users.id }).from(users).where(eq(users.groupId, groupId));
+  const userIds = groupUsers.map(u => u.id);
+
+  if (userIds.length === 0) {
+    return { totalUsers: 0, totalDevices: 0, totalMessages: 0, onlineDevices: 0 };
+  }
+
+  const userIdSql = sql`${devices.userId} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`;
+
+  const [deviceCount] = await db.select({ count: sql<number>`count(*)` }).from(devices).where(userIdSql);
+  const [onlineCount] = await db.select({ count: sql<number>`count(*)` }).from(devices).where(and(userIdSql, eq(devices.isOnline, true)));
+
+  // Get device ids for message count
+  const groupDevices = await db.select({ id: devices.id }).from(devices).where(userIdSql);
+  let msgCount = 0;
+  if (groupDevices.length > 0) {
+    const deviceIds = groupDevices.map(d => d.id);
+    const [mc] = await db.select({ count: sql<number>`count(*)` }).from(messages)
+      .where(sql`${messages.deviceId} IN (${sql.join(deviceIds.map(id => sql`${id}`), sql`, `)})`);
+    msgCount = mc?.count ?? 0;
+  }
+
+  return {
+    totalUsers: groupUsers.length,
+    totalDevices: deviceCount?.count ?? 0,
+    totalMessages: msgCount,
     onlineDevices: onlineCount?.count ?? 0,
   };
 }
@@ -187,6 +304,17 @@ export async function getDevicesByUserId(userId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(devices).where(eq(devices.userId, userId)).orderBy(desc(devices.createdAt));
+}
+
+export async function getDevicesByGroupId(groupId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const groupUsers = await db.select({ id: users.id }).from(users).where(eq(users.groupId, groupId));
+  if (groupUsers.length === 0) return [];
+  const userIds = groupUsers.map(u => u.id);
+  return db.select().from(devices)
+    .where(sql`${devices.userId} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`)
+    .orderBy(desc(devices.createdAt));
 }
 
 export async function getDeviceByDeviceId(deviceId: string) {
@@ -333,6 +461,89 @@ export async function getAllMessagesByUserId(userId: number, opts?: { limit?: nu
     .offset(opts?.offset ?? 0);
 }
 
+export async function getMessagesByGroupId(groupId: number, opts?: { limit?: number; offset?: number; search?: string; startTime?: number; endTime?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Get all user IDs in this group
+  const groupUsers = await db.select({ id: users.id }).from(users).where(eq(users.groupId, groupId));
+  if (groupUsers.length === 0) return [];
+  const userIds = groupUsers.map(u => u.id);
+
+  // Get all device IDs for these users
+  const groupDevices = await db.select({ id: devices.id }).from(devices)
+    .where(sql`${devices.userId} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`);
+  if (groupDevices.length === 0) return [];
+  const deviceIds = groupDevices.map(d => d.id);
+
+  const conditions: any[] = [
+    sql`${messages.deviceId} IN (${sql.join(deviceIds.map(id => sql`${id}`), sql`, `)})`
+  ];
+
+  if (opts?.search) {
+    conditions.push(
+      or(
+        like(messages.body, `%${opts.search}%`),
+        like(messages.phoneNumber, `%${opts.search}%`),
+        like(messages.contactName, `%${opts.search}%`)
+      )!
+    );
+  }
+  if (opts?.startTime) {
+    conditions.push(gte(messages.smsTimestamp, opts.startTime));
+  }
+  if (opts?.endTime) {
+    conditions.push(lte(messages.smsTimestamp, opts.endTime));
+  }
+
+  return db.select().from(messages)
+    .where(and(...conditions))
+    .orderBy(desc(messages.smsTimestamp))
+    .limit(opts?.limit ?? 200)
+    .offset(opts?.offset ?? 0);
+}
+
+export async function getAllMessagesForSuperadmin(opts?: { limit?: number; offset?: number; search?: string; startTime?: number; endTime?: number; groupId?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions: any[] = [];
+
+  // If filtering by group, get device IDs for that group
+  if (opts?.groupId) {
+    const groupUsers = await db.select({ id: users.id }).from(users).where(eq(users.groupId, opts.groupId));
+    if (groupUsers.length === 0) return [];
+    const userIds = groupUsers.map(u => u.id);
+    const groupDevices = await db.select({ id: devices.id }).from(devices)
+      .where(sql`${devices.userId} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`);
+    if (groupDevices.length === 0) return [];
+    const deviceIds = groupDevices.map(d => d.id);
+    conditions.push(sql`${messages.deviceId} IN (${sql.join(deviceIds.map(id => sql`${id}`), sql`, `)})`);
+  }
+
+  if (opts?.search) {
+    conditions.push(
+      or(
+        like(messages.body, `%${opts.search}%`),
+        like(messages.phoneNumber, `%${opts.search}%`),
+        like(messages.contactName, `%${opts.search}%`)
+      )!
+    );
+  }
+  if (opts?.startTime) {
+    conditions.push(gte(messages.smsTimestamp, opts.startTime));
+  }
+  if (opts?.endTime) {
+    conditions.push(lte(messages.smsTimestamp, opts.endTime));
+  }
+
+  return db.select().from(messages)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(messages.smsTimestamp))
+    .limit(opts?.limit ?? 200)
+    .offset(opts?.offset ?? 0);
+}
+
 export async function updateMessageStatus(id: number, status: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -344,6 +555,54 @@ export async function getMessageCountByDeviceId(deviceId: number) {
   if (!db) return 0;
   const result = await db.select({ count: sql<number>`count(*)` }).from(messages).where(eq(messages.deviceId, deviceId));
   return result[0]?.count ?? 0;
+}
+
+/** Export phone numbers with optional date range filter */
+export async function getExportPhoneNumbers(opts: {
+  userId?: number;
+  groupId?: number;
+  startTime?: number;
+  endTime?: number;
+  direction?: "incoming" | "outgoing";
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions: any[] = [];
+
+  if (opts.direction) {
+    conditions.push(eq(messages.direction, opts.direction));
+  }
+  if (opts.startTime) {
+    conditions.push(gte(messages.smsTimestamp, opts.startTime));
+  }
+  if (opts.endTime) {
+    conditions.push(lte(messages.smsTimestamp, opts.endTime));
+  }
+
+  // Scope by user or group
+  if (opts.groupId) {
+    const groupUsers = await db.select({ id: users.id }).from(users).where(eq(users.groupId, opts.groupId));
+    if (groupUsers.length === 0) return [];
+    const userIds = groupUsers.map(u => u.id);
+    const groupDevices = await db.select({ id: devices.id }).from(devices)
+      .where(sql`${devices.userId} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`);
+    if (groupDevices.length === 0) return [];
+    const deviceIds = groupDevices.map(d => d.id);
+    conditions.push(sql`${messages.deviceId} IN (${sql.join(deviceIds.map(id => sql`${id}`), sql`, `)})`);
+  } else if (opts.userId) {
+    const userDevices = await db.select({ id: devices.id }).from(devices).where(eq(devices.userId, opts.userId));
+    if (userDevices.length === 0) return [];
+    const deviceIds = userDevices.map(d => d.id);
+    conditions.push(sql`${messages.deviceId} IN (${sql.join(deviceIds.map(id => sql`${id}`), sql`, `)})`);
+  }
+
+  const result = await db.selectDistinct({ phoneNumber: messages.phoneNumber })
+    .from(messages)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(asc(messages.phoneNumber));
+
+  return result.map(r => r.phoneNumber);
 }
 
 // ─── System Config Queries ───
@@ -371,4 +630,14 @@ export async function getAllConfigs() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(systemConfig).orderBy(asc(systemConfig.configKey));
+}
+
+/** Get sum of maxDevices for all users in a group (allocated quota) */
+export async function getGroupAllocatedDevices(groupId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ total: sql<number>`COALESCE(SUM(${users.maxDevices}), 0)` })
+    .from(users)
+    .where(and(eq(users.groupId, groupId), eq(users.role, "user")));
+  return result[0]?.total ?? 0;
 }

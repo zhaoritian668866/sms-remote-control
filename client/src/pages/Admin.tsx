@@ -6,7 +6,8 @@ import { trpc } from "@/lib/trpc";
 import {
   Users, Smartphone, MessageSquare, Wifi, Shield, ShieldOff,
   Loader2, Search, Save, KeyRound, ChevronDown, ChevronUp,
-  BarChart3, Crown, Settings, Link2, ExternalLink,
+  BarChart3, Crown, Settings, Link2, ExternalLink, Plus,
+  Building2, Hash, Copy, Eye, EyeOff, Layers,
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
@@ -32,13 +33,13 @@ export default function Admin() {
     return null;
   }
 
-  if (user?.role !== "admin") {
+  if (user?.role !== "superadmin") {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-full">
           <div className="text-center">
             <Shield className="w-12 h-12 text-foreground/20 mx-auto mb-4" />
-            <p className="text-foreground/40 font-body">无权访问管理后台</p>
+            <p className="text-foreground/40 font-body">无权访问总后台（仅超级管理员可用）</p>
           </div>
         </div>
       </DashboardLayout>
@@ -55,57 +56,47 @@ export default function Admin() {
 }
 
 function AdminContent() {
-  const [tab, setTab] = useState<"stats" | "users" | "config">("stats");
+  const [tab, setTab] = useState<"stats" | "groups" | "users" | "messages" | "config">("stats");
+
+  const tabs = [
+    { key: "stats" as const, label: "系统概览", icon: BarChart3 },
+    { key: "groups" as const, label: "用户组管理", icon: Building2 },
+    { key: "users" as const, label: "全部用户", icon: Users },
+    { key: "messages" as const, label: "全部记录", icon: MessageSquare },
+    { key: "config" as const, label: "系统配置", icon: Settings },
+  ];
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Header */}
       <div className="shrink-0 px-6 py-4 border-b border-foreground/10">
         <div className="flex items-center gap-3 mb-4">
           <Crown className="w-5 h-5 text-foreground/60" />
-          <h1 className="text-lg font-serif text-foreground tracking-wider">管理后台</h1>
+          <h1 className="text-lg font-serif text-foreground tracking-wider">总后台</h1>
+          <span className="text-[10px] px-2 py-0.5 bg-foreground/10 text-foreground/50 font-body rounded">超级管理员</span>
         </div>
-        <div className="flex gap-1">
-          <button
-            onClick={() => setTab("stats")}
-            className={`px-4 py-1.5 text-sm font-body tracking-wider rounded transition-colors ${
-              tab === "stats"
-                ? "bg-foreground/10 text-foreground"
-                : "text-muted-foreground/50 hover:text-muted-foreground"
-            }`}
-          >
-            <BarChart3 className="w-3.5 h-3.5 inline mr-1.5" />
-            系统概览
-          </button>
-          <button
-            onClick={() => setTab("users")}
-            className={`px-4 py-1.5 text-sm font-body tracking-wider rounded transition-colors ${
-              tab === "users"
-                ? "bg-foreground/10 text-foreground"
-                : "text-muted-foreground/50 hover:text-muted-foreground"
-            }`}
-          >
-            <Users className="w-3.5 h-3.5 inline mr-1.5" />
-            用户管理
-          </button>
-          <button
-            onClick={() => setTab("config")}
-            className={`px-4 py-1.5 text-sm font-body tracking-wider rounded transition-colors ${
-              tab === "config"
-                ? "bg-foreground/10 text-foreground"
-                : "text-muted-foreground/50 hover:text-muted-foreground"
-            }`}
-          >
-            <Settings className="w-3.5 h-3.5 inline mr-1.5" />
-            系统配置
-          </button>
+        <div className="flex gap-1 flex-wrap">
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-1.5 text-sm font-body tracking-wider rounded transition-colors ${
+                tab === t.key
+                  ? "bg-foreground/10 text-foreground"
+                  : "text-muted-foreground/50 hover:text-muted-foreground"
+              }`}
+            >
+              <t.icon className="w-3.5 h-3.5 inline mr-1.5" />
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {tab === "stats" && <StatsPanel />}
-        {tab === "users" && <UsersPanel />}
+        {tab === "groups" && <GroupsPanel />}
+        {tab === "users" && <AllUsersPanel />}
+        {tab === "messages" && <MessagesPanel />}
         {tab === "config" && <ConfigPanel />}
       </div>
     </div>
@@ -113,35 +104,30 @@ function AdminContent() {
 }
 
 function StatsPanel() {
-  const { data: stats, isLoading } = trpc.admin.stats.useQuery();
+  const { data: stats, isLoading } = trpc.superadmin.stats.useQuery();
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-5 h-5 animate-spin text-foreground/40" />
-      </div>
-    );
+    return <div className="flex items-center justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-foreground/40" /></div>;
   }
 
   const items = [
-    { label: "注册用户", value: stats?.totalUsers ?? 0, icon: Users, color: "text-foreground/70" },
-    { label: "设备总数", value: stats?.totalDevices ?? 0, icon: Smartphone, color: "text-foreground/70" },
-    { label: "在线设备", value: stats?.onlineDevices ?? 0, icon: Wifi, color: "text-green-400/70" },
-    { label: "短信总量", value: stats?.totalMessages ?? 0, icon: MessageSquare, color: "text-foreground/70" },
+    { label: "用户组", value: stats?.totalGroups ?? 0, icon: Building2 },
+    { label: "注册用户", value: stats?.totalUsers ?? 0, icon: Users },
+    { label: "设备总数", value: stats?.totalDevices ?? 0, icon: Smartphone },
+    { label: "在线设备", value: stats?.onlineDevices ?? 0, icon: Wifi },
+    { label: "短信总量", value: stats?.totalMessages ?? 0, icon: MessageSquare },
   ];
 
   return (
     <div className="p-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {items.map(item => (
           <div key={item.label} className="relative bg-card/50 border border-foreground/10 p-5">
-            {/* 角标 */}
             <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-foreground/15" />
             <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-foreground/15" />
             <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-foreground/15" />
             <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-foreground/15" />
-
-            <item.icon className={`w-5 h-5 ${item.color} mb-3`} />
+            <item.icon className="w-5 h-5 text-foreground/70 mb-3" />
             <div className="text-2xl font-serif text-foreground mb-1">{item.value}</div>
             <div className="text-xs font-body text-muted-foreground/50 tracking-wider">{item.label}</div>
           </div>
@@ -151,133 +137,205 @@ function StatsPanel() {
   );
 }
 
-function ConfigPanel() {
-  const { data: configs, isLoading, refetch } = trpc.admin.getConfigs.useQuery();
-  const [serviceLink, setServiceLink] = useState("");
+function GroupsPanel() {
+  const { data: groupList, isLoading, refetch } = trpc.superadmin.groups.useQuery();
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newCode, setNewCode] = useState("");
+  const [newMax, setNewMax] = useState("10");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  const setConfigMutation = trpc.admin.setConfig.useMutation({
+  const createMutation = trpc.superadmin.createGroup.useMutation({
     onSuccess: () => {
-      toast.success("配置已保存");
+      toast.success("用户组创建成功");
       refetch();
+      setShowCreate(false);
+      setNewName("");
+      setNewCode("");
+      setNewMax("10");
     },
-    onError: (err: any) => toast.error(err.message),
+    onError: (err) => toast.error(err.message),
   });
 
-  useEffect(() => {
-    if (configs) {
-      const csLink = configs.find((c: any) => c.configKey === "customer_service_link");
-      if (csLink?.configValue) {
-        setServiceLink(csLink.configValue);
-      }
+  const handleCreate = () => {
+    if (!newName.trim() || !newCode.trim()) {
+      toast.error("请填写完整信息");
+      return;
     }
-  }, [configs]);
-
-  const handleSaveServiceLink = () => {
-    setConfigMutation.mutate({
-      key: "customer_service_link",
-      value: serviceLink.trim(),
-      description: "客服联系链接（微信/QQ/网页等）",
+    createMutation.mutate({
+      name: newName.trim(),
+      groupCode: newCode.trim(),
+      maxDevices: parseInt(newMax) || 10,
     });
   };
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-5 h-5 animate-spin text-foreground/40" />
-      </div>
-    );
+    return <div className="flex items-center justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-foreground/40" /></div>;
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* 客服链接配置 */}
-      <div className="relative bg-card/50 border border-foreground/10 p-6">
-        <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-foreground/15" />
-        <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-foreground/15" />
-        <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-foreground/15" />
-        <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-foreground/15" />
-
-        <div className="flex items-center gap-2 mb-4">
-          <Link2 className="w-4 h-4 text-foreground/60" />
-          <h3 className="text-sm font-serif text-foreground tracking-wider">客服联系链接</h3>
-        </div>
-        <p className="text-xs font-body text-muted-foreground/50 mb-4">
-          用户设备超限时将显示此链接，引导用户联系客服购买更多设备配额。支持微信链接、QQ链接、网页链接等。
-        </p>
-
-        <div className="flex items-center gap-3">
-          <Input
-            value={serviceLink}
-            onChange={e => setServiceLink(e.target.value)}
-            placeholder="例如：https://work.weixin.qq.com/kfid/xxx 或 微信号: xxx"
-            className="h-9 flex-1 bg-background/60 border-foreground/10 text-sm font-body"
-          />
-          <Button
-            size="sm"
-            onClick={handleSaveServiceLink}
-            disabled={setConfigMutation.isPending}
-            className="h-9 px-4 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body"
-          >
-            {setConfigMutation.isPending ? (
-              <Loader2 className="w-3 h-3 animate-spin mr-1" />
-            ) : (
-              <Save className="w-3 h-3 mr-1" />
-            )}
-            保存
-          </Button>
-        </div>
-
-        {serviceLink && (
-          <div className="mt-3 flex items-center gap-2 text-xs font-body text-muted-foreground/40">
-            <ExternalLink className="w-3 h-3" />
-            <span>当前链接：</span>
-            <span className="text-foreground/60 truncate max-w-md">
-              {serviceLink}
-            </span>
-          </div>
-        )}
+    <div className="p-6 space-y-4">
+      {/* Create new group */}
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          onClick={() => setShowCreate(!showCreate)}
+          className="h-8 px-4 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body"
+        >
+          <Plus className="w-3 h-3 mr-1" />
+          新建用户组
+        </Button>
       </div>
 
-      {/* 配置项列表 */}
-      <div className="relative bg-card/50 border border-foreground/10 p-6">
-        <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-foreground/15" />
-        <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-foreground/15" />
-        <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-foreground/15" />
-        <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-foreground/15" />
+      {showCreate && (
+        <div className="relative bg-card/50 border border-foreground/10 p-5 space-y-3">
+          <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-foreground/15" />
+          <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-foreground/15" />
+          <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-foreground/15" />
+          <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-foreground/15" />
 
-        <div className="flex items-center gap-2 mb-4">
-          <Settings className="w-4 h-4 text-foreground/60" />
-          <h3 className="text-sm font-serif text-foreground tracking-wider">配置项列表</h3>
+          <h3 className="text-sm font-serif text-foreground tracking-wider mb-3">创建用户组（子后台）</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-body text-muted-foreground/60 mb-1">组名称</label>
+              <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="例如：华东区" className="h-9 bg-background/60 border-foreground/10 text-sm font-body" />
+            </div>
+            <div>
+              <label className="block text-xs font-body text-muted-foreground/60 mb-1">唯一标识码</label>
+              <Input value={newCode} onChange={e => setNewCode(e.target.value)} placeholder="例如：huadong01" className="h-9 bg-background/60 border-foreground/10 text-sm font-body" />
+            </div>
+            <div>
+              <label className="block text-xs font-body text-muted-foreground/60 mb-1">设备总配额</label>
+              <Input value={newMax} onChange={e => setNewMax(e.target.value)} type="number" min={1} className="h-9 bg-background/60 border-foreground/10 text-sm font-body" />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" onClick={handleCreate} disabled={createMutation.isPending} className="h-8 px-4 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body">
+              {createMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+              创建
+            </Button>
+            <Button size="sm" onClick={() => setShowCreate(false)} className="h-8 px-4 text-xs font-body text-muted-foreground/50 hover:text-foreground">
+              取消
+            </Button>
+          </div>
         </div>
+      )}
 
-        {configs && configs.length > 0 ? (
-          <div className="space-y-2">
-            {configs.map((c: any) => (
-              <div key={c.id} className="flex items-center justify-between py-2 px-3 bg-background/40 border border-foreground/5">
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-body text-foreground/70">{c.configKey}</div>
-                  <div className="text-xs font-body text-muted-foreground/40 truncate mt-0.5">
-                    {c.description || "无描述"}
-                  </div>
-                </div>
-                <div className="text-xs font-body text-foreground/50 max-w-xs truncate ml-4">
-                  {c.configValue || "（空）"}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-8 text-muted-foreground/40 font-body text-sm">
-            暂无配置项，保存客服链接后将自动创建
-          </div>
+      {/* Group list */}
+      <div className="space-y-2">
+        {groupList?.map(g => (
+          <GroupRow key={g.id} group={g} isExpanded={expandedId === g.id} onToggle={() => setExpandedId(expandedId === g.id ? null : g.id)} onRefresh={refetch} />
+        ))}
+        {(!groupList || groupList.length === 0) && (
+          <div className="text-center py-10 text-muted-foreground/40 font-body text-sm">暂无用户组，点击上方按钮创建</div>
         )}
       </div>
     </div>
   );
 }
 
-function UsersPanel() {
-  const { data: userList, isLoading, refetch } = trpc.admin.users.useQuery();
+function GroupRow({ group, isExpanded, onToggle, onRefresh }: { group: any; isExpanded: boolean; onToggle: () => void; onRefresh: () => void }) {
+  const [maxDevices, setMaxDevices] = useState(String(group.maxDevices));
+  const [showAdminForm, setShowAdminForm] = useState(false);
+  const [adminUsername, setAdminUsername] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminName, setAdminName] = useState("");
+
+  const updateMutation = trpc.superadmin.updateGroup.useMutation({
+    onSuccess: () => { toast.success("更新成功"); onRefresh(); },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const createAdminMutation = trpc.superadmin.createGroupAdmin.useMutation({
+    onSuccess: () => {
+      toast.success("子后台管理员创建成功");
+      setShowAdminForm(false);
+      setAdminUsername("");
+      setAdminPassword("");
+      setAdminName("");
+      onRefresh();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(group.groupCode);
+    toast.success("标识码已复制");
+  };
+
+  return (
+    <div className="bg-card/40 border border-foreground/8 overflow-hidden">
+      <button onClick={onToggle} className="w-full px-4 py-3 flex items-center gap-3 hover:bg-foreground/5 transition-colors text-left">
+        <div className="w-8 h-8 rounded bg-foreground/10 flex items-center justify-center shrink-0">
+          <Building2 className="w-4 h-4 text-foreground/60" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-body text-foreground truncate">{group.name}</span>
+            {!group.isActive && <span className="text-[10px] px-1.5 py-0.5 bg-red-500/20 text-red-400/80 font-body rounded">已禁用</span>}
+          </div>
+          <div className="text-xs text-muted-foreground/40 font-body">
+            标识码: {group.groupCode} · 人员 {group.userCount}人 · 设备 {group.deviceCount}/{group.maxDevices}台 · 已分配 {group.allocatedDevices}台
+          </div>
+        </div>
+        {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground/30 shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground/30 shrink-0" />}
+      </button>
+
+      {isExpanded && (
+        <div className="px-4 pb-4 border-t border-foreground/5 pt-3 space-y-3">
+          {/* Copy group code */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-body text-muted-foreground/60 w-20 shrink-0">标识码</label>
+            <code className="text-sm font-mono text-foreground/70 bg-background/60 px-2 py-1 border border-foreground/10">{group.groupCode}</code>
+            <Button size="sm" onClick={handleCopyCode} className="h-7 px-2 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body">
+              <Copy className="w-3 h-3 mr-1" />复制
+            </Button>
+          </div>
+
+          {/* Update quota */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-body text-muted-foreground/60 w-20 shrink-0">设备配额</label>
+            <Input value={maxDevices} onChange={e => setMaxDevices(e.target.value)} className="h-8 w-24 text-sm bg-background/60 border-foreground/10 font-body text-center" type="number" min={0} />
+            <span className="text-xs text-muted-foreground/40 font-body">台</span>
+            <Button size="sm" onClick={() => updateMutation.mutate({ id: group.id, maxDevices: parseInt(maxDevices) || 0 })} disabled={updateMutation.isPending} className="h-8 px-3 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body">
+              <Save className="w-3 h-3 mr-1" />保存
+            </Button>
+          </div>
+
+          {/* Toggle active */}
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => updateMutation.mutate({ id: group.id, isActive: !group.isActive })} disabled={updateMutation.isPending}
+              className={`h-8 px-3 text-xs font-body border ${group.isActive ? "bg-red-500/10 border-red-500/20 text-red-400/80 hover:bg-red-500/20" : "bg-green-500/10 border-green-500/20 text-green-400/80 hover:bg-green-500/20"}`}>
+              {group.isActive ? <><ShieldOff className="w-3 h-3 mr-1" />禁用</> : <><Shield className="w-3 h-3 mr-1" />启用</>}
+            </Button>
+            <Button size="sm" onClick={() => setShowAdminForm(!showAdminForm)} className="h-8 px-3 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body">
+              <Crown className="w-3 h-3 mr-1" />创建管理员
+            </Button>
+          </div>
+
+          {/* Create admin form */}
+          {showAdminForm && (
+            <div className="bg-background/40 border border-foreground/5 p-3 space-y-2 mt-2">
+              <h4 className="text-xs font-serif text-foreground/70 tracking-wider">创建子后台管理员</h4>
+              <div className="grid grid-cols-3 gap-2">
+                <Input value={adminName} onChange={e => setAdminName(e.target.value)} placeholder="昵称" className="h-8 text-sm bg-background/60 border-foreground/10 font-body" />
+                <Input value={adminUsername} onChange={e => setAdminUsername(e.target.value)} placeholder="用户名" className="h-8 text-sm bg-background/60 border-foreground/10 font-body" />
+                <Input value={adminPassword} onChange={e => setAdminPassword(e.target.value)} placeholder="密码（至少6位）" type="password" className="h-8 text-sm bg-background/60 border-foreground/10 font-body" />
+              </div>
+              <Button size="sm" onClick={() => createAdminMutation.mutate({ groupId: group.id, username: adminUsername.trim(), password: adminPassword, name: adminName.trim() })} disabled={createAdminMutation.isPending} className="h-8 px-3 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body">
+                {createAdminMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+                创建管理员
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AllUsersPanel() {
+  const { data: userList, isLoading, refetch } = trpc.superadmin.allUsers.useQuery();
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
@@ -285,231 +343,223 @@ function UsersPanel() {
     if (!userList) return [];
     if (!searchTerm) return userList;
     const s = searchTerm.toLowerCase();
-    return userList.filter(u =>
+    return userList.filter((u: any) =>
       u.username?.toLowerCase().includes(s) ||
       u.name?.toLowerCase().includes(s) ||
-      u.email?.toLowerCase().includes(s)
+      u.groupName?.toLowerCase().includes(s)
     );
   }, [userList, searchTerm]);
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-5 h-5 animate-spin text-foreground/40" />
-      </div>
-    );
+    return <div className="flex items-center justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-foreground/40" /></div>;
   }
 
   return (
     <div className="p-6">
-      {/* 搜索 */}
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/40" />
-        <Input
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          placeholder="搜索用户名、昵称..."
-          className="pl-9 h-9 bg-background/60 border-foreground/10 text-sm font-body"
-        />
+        <Input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="搜索用户名、昵称、用户组..." className="pl-9 h-9 bg-background/60 border-foreground/10 text-sm font-body" />
       </div>
-
-      {/* 用户列表 */}
       <div className="space-y-2">
-        {filteredUsers.map(u => (
-          <UserRow
-            key={u.id}
-            user={u}
-            isExpanded={expandedId === u.id}
-            onToggle={() => setExpandedId(expandedId === u.id ? null : u.id)}
-            onRefresh={refetch}
-          />
+        {filteredUsers.map((u: any) => (
+          <SuperadminUserRow key={u.id} user={u} isExpanded={expandedId === u.id} onToggle={() => setExpandedId(expandedId === u.id ? null : u.id)} onRefresh={refetch} />
         ))}
-        {filteredUsers.length === 0 && (
-          <div className="text-center py-10 text-muted-foreground/40 font-body text-sm">
-            暂无用户数据
-          </div>
-        )}
+        {filteredUsers.length === 0 && <div className="text-center py-10 text-muted-foreground/40 font-body text-sm">暂无用户数据</div>}
       </div>
     </div>
   );
 }
 
-function UserRow({
-  user,
-  isExpanded,
-  onToggle,
-  onRefresh,
-}: {
-  user: any;
-  isExpanded: boolean;
-  onToggle: () => void;
-  onRefresh: () => void;
-}) {
+function SuperadminUserRow({ user, isExpanded, onToggle, onRefresh }: { user: any; isExpanded: boolean; onToggle: () => void; onRefresh: () => void }) {
   const [maxDevices, setMaxDevices] = useState(String(user.maxDevices ?? 1));
   const [newPassword, setNewPassword] = useState("");
 
-  const updateMutation = trpc.admin.updateUser.useMutation({
-    onSuccess: () => {
-      toast.success("更新成功");
-      onRefresh();
-    },
+  const updateMutation = trpc.superadmin.updateUser.useMutation({
+    onSuccess: () => { toast.success("更新成功"); onRefresh(); },
     onError: (err) => toast.error(err.message),
   });
 
-  const resetPwdMutation = trpc.admin.resetPassword.useMutation({
-    onSuccess: () => {
-      toast.success("密码已重置");
-      setNewPassword("");
-    },
+  const resetPwdMutation = trpc.superadmin.resetPassword.useMutation({
+    onSuccess: () => { toast.success("密码已重置"); setNewPassword(""); },
     onError: (err) => toast.error(err.message),
   });
 
-  const handleSaveQuota = () => {
-    const num = parseInt(maxDevices);
-    if (isNaN(num) || num < 0 || num > 999) {
-      toast.error("请输入 0-999 之间的数字");
-      return;
-    }
-    updateMutation.mutate({ id: user.id, maxDevices: num });
-  };
-
-  const handleToggleActive = () => {
-    updateMutation.mutate({ id: user.id, isActive: !user.isActive });
-  };
-
-  const handleToggleRole = () => {
-    updateMutation.mutate({ id: user.id, role: user.role === "admin" ? "user" : "admin" });
-  };
-
-  const handleResetPassword = () => {
-    if (!newPassword || newPassword.length < 6) {
-      toast.error("密码至少6位");
-      return;
-    }
-    resetPwdMutation.mutate({ id: user.id, newPassword });
-  };
+  const roleLabel = user.role === "superadmin" ? "超管" : user.role === "admin" ? "主管" : "一线";
+  const roleColor = user.role === "superadmin" ? "bg-yellow-500/20 text-yellow-400/80" : user.role === "admin" ? "bg-blue-500/20 text-blue-400/80" : "bg-foreground/10 text-foreground/50";
 
   return (
     <div className="bg-card/40 border border-foreground/8 overflow-hidden">
-      {/* 主行 */}
-      <button
-        onClick={onToggle}
-        className="w-full px-4 py-3 flex items-center gap-3 hover:bg-foreground/5 transition-colors text-left"
-      >
+      <button onClick={onToggle} className="w-full px-4 py-3 flex items-center gap-3 hover:bg-foreground/5 transition-colors text-left">
         <div className="w-8 h-8 rounded bg-foreground/10 flex items-center justify-center shrink-0">
-          <span className="text-xs font-serif text-foreground/60">
-            {(user.name || user.username || "?")[0].toUpperCase()}
-          </span>
+          <span className="text-xs font-serif text-foreground/60">{(user.name || user.username || "?")[0].toUpperCase()}</span>
         </div>
-
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-body text-foreground truncate">
-              {user.name || user.username}
-            </span>
-            {user.role === "admin" && (
-              <span className="text-[10px] px-1.5 py-0.5 bg-foreground/10 text-foreground/60 font-body rounded">
-                管理员
-              </span>
-            )}
-            {!user.isActive && (
-              <span className="text-[10px] px-1.5 py-0.5 bg-red-500/20 text-red-400/80 font-body rounded">
-                已禁用
-              </span>
-            )}
+            <span className="text-sm font-body text-foreground truncate">{user.name || user.username}</span>
+            <span className={`text-[10px] px-1.5 py-0.5 font-body rounded ${roleColor}`}>{roleLabel}</span>
+            {!user.isActive && <span className="text-[10px] px-1.5 py-0.5 bg-red-500/20 text-red-400/80 font-body rounded">已禁用</span>}
           </div>
           <div className="text-xs text-muted-foreground/40 font-body">
-            @{user.username} · 设备 {user.deviceCount}/{user.maxDevices}台 · 注册于 {new Date(user.createdAt).toLocaleDateString("zh-CN")}
+            @{user.username} · {user.groupName ? `组: ${user.groupName}` : "无组"} · 设备 {user.deviceCount}/{user.maxDevices}台
           </div>
         </div>
-
-        {isExpanded ? (
-          <ChevronUp className="w-4 h-4 text-muted-foreground/30 shrink-0" />
-        ) : (
-          <ChevronDown className="w-4 h-4 text-muted-foreground/30 shrink-0" />
-        )}
+        {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground/30 shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground/30 shrink-0" />}
       </button>
 
-      {/* 展开详情 */}
       {isExpanded && (
         <div className="px-4 pb-4 border-t border-foreground/5 pt-3 space-y-3">
-          {/* 设备配额 */}
           <div className="flex items-center gap-2">
             <label className="text-xs font-body text-muted-foreground/60 w-20 shrink-0">设备配额</label>
-            <Input
-              value={maxDevices}
-              onChange={e => setMaxDevices(e.target.value)}
-              className="h-8 w-20 text-sm bg-background/60 border-foreground/10 font-body text-center"
-              type="number"
-              min={0}
-              max={999}
-            />
+            <Input value={maxDevices} onChange={e => setMaxDevices(e.target.value)} className="h-8 w-20 text-sm bg-background/60 border-foreground/10 font-body text-center" type="number" min={0} />
             <span className="text-xs text-muted-foreground/40 font-body">台</span>
-            <Button
-              size="sm"
-              onClick={handleSaveQuota}
-              disabled={updateMutation.isPending}
-              className="h-8 px-3 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body"
-            >
-              <Save className="w-3 h-3 mr-1" />
-              保存
+            <Button size="sm" onClick={() => updateMutation.mutate({ id: user.id, maxDevices: parseInt(maxDevices) || 0 })} disabled={updateMutation.isPending} className="h-8 px-3 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body">
+              <Save className="w-3 h-3 mr-1" />保存
             </Button>
           </div>
-
-          {/* 重置密码 */}
           <div className="flex items-center gap-2">
             <label className="text-xs font-body text-muted-foreground/60 w-20 shrink-0">重置密码</label>
-            <Input
-              value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-              placeholder="输入新密码（至少6位）"
-              type="password"
-              className="h-8 flex-1 text-sm bg-background/60 border-foreground/10 font-body"
-            />
-            <Button
-              size="sm"
-              onClick={handleResetPassword}
-              disabled={resetPwdMutation.isPending}
-              className="h-8 px-3 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body"
-            >
-              <KeyRound className="w-3 h-3 mr-1" />
-              重置
+            <Input value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="输入新密码（至少6位）" type="password" className="h-8 flex-1 text-sm bg-background/60 border-foreground/10 font-body" />
+            <Button size="sm" onClick={() => resetPwdMutation.mutate({ id: user.id, newPassword })} disabled={resetPwdMutation.isPending || newPassword.length < 6} className="h-8 px-3 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body">
+              <KeyRound className="w-3 h-3 mr-1" />重置
             </Button>
           </div>
-
-          {/* 操作按钮 */}
           <div className="flex gap-2 pt-1">
-            <Button
-              size="sm"
-              onClick={handleToggleActive}
-              disabled={updateMutation.isPending}
-              className={`h-8 px-3 text-xs font-body border ${
-                user.isActive
-                  ? "bg-red-500/10 border-red-500/20 text-red-400/80 hover:bg-red-500/20"
-                  : "bg-green-500/10 border-green-500/20 text-green-400/80 hover:bg-green-500/20"
-              }`}
-            >
-              {user.isActive ? (
-                <><ShieldOff className="w-3 h-3 mr-1" />禁用账户</>
-              ) : (
-                <><Shield className="w-3 h-3 mr-1" />启用账户</>
-              )}
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleToggleRole}
-              disabled={updateMutation.isPending}
-              className="h-8 px-3 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body"
-            >
-              <Crown className="w-3 h-3 mr-1" />
-              {user.role === "admin" ? "取消管理员" : "设为管理员"}
+            <Button size="sm" onClick={() => updateMutation.mutate({ id: user.id, isActive: !user.isActive })} disabled={updateMutation.isPending}
+              className={`h-8 px-3 text-xs font-body border ${user.isActive ? "bg-red-500/10 border-red-500/20 text-red-400/80 hover:bg-red-500/20" : "bg-green-500/10 border-green-500/20 text-green-400/80 hover:bg-green-500/20"}`}>
+              {user.isActive ? <><ShieldOff className="w-3 h-3 mr-1" />禁用</> : <><Shield className="w-3 h-3 mr-1" />启用</>}
             </Button>
           </div>
-
-          {/* 详细信息 */}
           <div className="text-xs text-muted-foreground/30 font-body pt-1 space-y-0.5">
             <div>最后登录：{user.lastSignedIn ? new Date(user.lastSignedIn).toLocaleString("zh-CN") : "从未"}</div>
-            <div>邮箱：{user.email || "未设置"}</div>
+            <div>注册时间：{new Date(user.createdAt).toLocaleString("zh-CN")}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MessagesPanel() {
+  const [search, setSearch] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const { data: groupList } = trpc.superadmin.groups.useQuery();
+  const [selectedGroup, setSelectedGroup] = useState<number | undefined>();
+
+  const startTime = startDate ? new Date(startDate).getTime() : undefined;
+  const endTime = endDate ? new Date(endDate + "T23:59:59").getTime() : undefined;
+
+  const { data: msgs, isLoading } = trpc.superadmin.messages.useQuery({
+    groupId: selectedGroup,
+    search: search || undefined,
+    startTime,
+    endTime,
+    limit: 200,
+  });
+
+  return (
+    <div className="p-6">
+      <div className="flex flex-wrap gap-2 mb-4">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/40" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索号码、内容..." className="pl-9 h-9 bg-background/60 border-foreground/10 text-sm font-body" />
+        </div>
+        <select value={selectedGroup || ""} onChange={e => setSelectedGroup(e.target.value ? Number(e.target.value) : undefined)}
+          className="h-9 px-3 bg-background/60 border border-foreground/10 text-sm font-body text-foreground rounded">
+          <option value="">全部用户组</option>
+          {groupList?.map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
+        </select>
+        <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-9 w-36 bg-background/60 border-foreground/10 text-sm font-body" />
+        <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-9 w-36 bg-background/60 border-foreground/10 text-sm font-body" />
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-foreground/40" /></div>
+      ) : (
+        <div className="space-y-1">
+          {msgs?.map((m: any) => (
+            <div key={m.id} className="flex items-start gap-3 px-3 py-2 bg-card/30 border border-foreground/5 text-sm">
+              <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${m.direction === "incoming" ? "bg-blue-500/20 text-blue-400/80" : "bg-green-500/20 text-green-400/80"}`}>
+                {m.direction === "incoming" ? "收" : "发"}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground/50 font-body">
+                  <span>{m.phoneNumber}</span>
+                  <span>·</span>
+                  <span>{new Date(Number(m.smsTimestamp)).toLocaleString("zh-CN")}</span>
+                </div>
+                <div className="text-foreground/80 font-body mt-0.5 break-all">{m.body}</div>
+              </div>
+            </div>
+          ))}
+          {(!msgs || msgs.length === 0) && <div className="text-center py-10 text-muted-foreground/40 font-body text-sm">暂无消息记录</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConfigPanel() {
+  const { data: configs, isLoading, refetch } = trpc.superadmin.getConfigs.useQuery();
+  const [serviceLink, setServiceLink] = useState("");
+
+  const setConfigMutation = trpc.superadmin.setConfig.useMutation({
+    onSuccess: () => { toast.success("配置已保存"); refetch(); },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  useEffect(() => {
+    if (configs) {
+      const csLink = configs.find((c: any) => c.configKey === "customer_service_link");
+      if (csLink?.configValue) setServiceLink(csLink.configValue);
+    }
+  }, [configs]);
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-foreground/40" /></div>;
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="relative bg-card/50 border border-foreground/10 p-6">
+        <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-foreground/15" />
+        <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-foreground/15" />
+        <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-foreground/15" />
+        <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-foreground/15" />
+        <div className="flex items-center gap-2 mb-4">
+          <Link2 className="w-4 h-4 text-foreground/60" />
+          <h3 className="text-sm font-serif text-foreground tracking-wider">客服联系链接</h3>
+        </div>
+        <p className="text-xs font-body text-muted-foreground/50 mb-4">用户设备超限时将显示此链接，引导用户联系客服购买更多设备配额。</p>
+        <div className="flex items-center gap-3">
+          <Input value={serviceLink} onChange={e => setServiceLink(e.target.value)} placeholder="例如：https://work.weixin.qq.com/kfid/xxx" className="h-9 flex-1 bg-background/60 border-foreground/10 text-sm font-body" />
+          <Button size="sm" onClick={() => setConfigMutation.mutate({ key: "customer_service_link", value: serviceLink.trim(), description: "客服联系链接" })} disabled={setConfigMutation.isPending} className="h-9 px-4 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body">
+            {setConfigMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+            保存
+          </Button>
+        </div>
+      </div>
+
+      {configs && configs.length > 0 && (
+        <div className="relative bg-card/50 border border-foreground/10 p-6">
+          <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-foreground/15" />
+          <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-foreground/15" />
+          <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-foreground/15" />
+          <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-foreground/15" />
+          <div className="flex items-center gap-2 mb-4">
+            <Settings className="w-4 h-4 text-foreground/60" />
+            <h3 className="text-sm font-serif text-foreground tracking-wider">配置项列表</h3>
+          </div>
+          <div className="space-y-2">
+            {configs.map((c: any) => (
+              <div key={c.id} className="flex items-center justify-between py-2 px-3 bg-background/40 border border-foreground/5">
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-body text-foreground/70">{c.configKey}</div>
+                  <div className="text-xs font-body text-muted-foreground/40 truncate mt-0.5">{c.description || "无描述"}</div>
+                </div>
+                <div className="text-xs font-body text-foreground/50 max-w-xs truncate ml-4">{c.configValue || "（空）"}</div>
+              </div>
+            ))}
           </div>
         </div>
       )}

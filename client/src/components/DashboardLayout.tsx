@@ -22,7 +22,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useUnreadCounts } from "@/hooks/useUnread";
-import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft, Crown } from "lucide-react";
+import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft, Crown, Building2, FileDown } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -122,7 +122,9 @@ function DashboardLayoutContent({
     { icon: Smartphone, label: "信使", path: "/devices", showUnread: true },
     { icon: MessageSquare, label: "传书", path: "/messages" },
     { icon: History, label: "卷宗", path: "/history" },
-    ...(user?.role === "admin" ? [{ icon: Crown, label: "后台", path: "/admin" }] : []),
+    ...(user?.role === "superadmin" ? [{ icon: Crown, label: "总后台", path: "/admin" }] : []),
+    ...(user?.role === "admin" ? [{ icon: Building2, label: "子后台", path: "/sub-admin" }] : []),
+    { icon: FileDown, label: "导出", path: "/export" },
   ];
 
   const activeMenuItem = menuItems.find(item => item.path === location);
