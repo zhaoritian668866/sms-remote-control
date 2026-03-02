@@ -1,6 +1,6 @@
-import { eq, and, desc, like, or, gte, lte, sql } from "drizzle-orm";
+import { eq, and, desc, like, or, gte, lte, sql, asc, count } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, devices, pairingTokens, messages, type InsertDevice, type InsertPairingToken, type InsertMessage } from "../drizzle/schema";
+import { InsertUser, users, devices, pairingTokens, messages, systemConfig, type InsertDevice, type InsertPairingToken, type InsertMessage } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -15,6 +15,40 @@ export async function getDb() {
     }
   }
   return _db;
+}
+
+// ─── User Auth Queries ───
+
+export async function getUserByUsername(username: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createUserWithPassword(data: { username: string; passwordHash: string; name: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const openId = `local_${data.username}_${Date.now()}`;
+  await db.insert(users).values({
+    openId,
+    username: data.username,
+    passwordHash: data.passwordHash,
+    name: data.name,
+    loginMethod: "password",
+    role: "user",
+    maxDevices: 1,
+    isActive: true,
+    lastSignedIn: new Date(),
+  });
+  return getUserByUsername(data.username);
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
@@ -85,6 +119,58 @@ export async function getUserByOpenId(openId: string) {
 
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function updateUserLastSignedIn(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, id));
+}
+
+// ─── Admin: User Management ───
+
+export async function getAllUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: users.id,
+    username: users.username,
+    name: users.name,
+    email: users.email,
+    role: users.role,
+    maxDevices: users.maxDevices,
+    isActive: users.isActive,
+    createdAt: users.createdAt,
+    lastSignedIn: users.lastSignedIn,
+  }).from(users).orderBy(desc(users.createdAt));
+}
+
+export async function updateUserAdmin(id: number, data: { maxDevices?: number; isActive?: boolean; role?: "user" | "admin"; name?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set(data).where(eq(users.id, id));
+}
+
+export async function getDeviceCountByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ count: sql<number>`count(*)` }).from(devices).where(eq(devices.userId, userId));
+  return result[0]?.count ?? 0;
+}
+
+export async function getSystemStats() {
+  const db = await getDb();
+  if (!db) return { totalUsers: 0, totalDevices: 0, totalMessages: 0, onlineDevices: 0 };
+  const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(users);
+  const [deviceCount] = await db.select({ count: sql<number>`count(*)` }).from(devices);
+  const [msgCount] = await db.select({ count: sql<number>`count(*)` }).from(messages);
+  const [onlineCount] = await db.select({ count: sql<number>`count(*)` }).from(devices).where(eq(devices.isOnline, true));
+  return {
+    totalUsers: userCount?.count ?? 0,
+    totalDevices: deviceCount?.count ?? 0,
+    totalMessages: msgCount?.count ?? 0,
+    onlineDevices: onlineCount?.count ?? 0,
+  };
 }
 
 // ─── Device Queries ───
@@ -258,4 +344,31 @@ export async function getMessageCountByDeviceId(deviceId: number) {
   if (!db) return 0;
   const result = await db.select({ count: sql<number>`count(*)` }).from(messages).where(eq(messages.deviceId, deviceId));
   return result[0]?.count ?? 0;
+}
+
+// ─── System Config Queries ───
+
+export async function getConfigValue(key: string): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(systemConfig).where(eq(systemConfig.configKey, key)).limit(1);
+  return result.length > 0 ? (result[0].configValue ?? null) : null;
+}
+
+export async function setConfigValue(key: string, value: string, description?: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(systemConfig).values({
+    configKey: key,
+    configValue: value,
+    description: description || null,
+  }).onDuplicateKeyUpdate({
+    set: { configValue: value },
+  });
+}
+
+export async function getAllConfigs() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(systemConfig).orderBy(asc(systemConfig.configKey));
 }

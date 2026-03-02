@@ -24,12 +24,23 @@ export function initWebSocket(server: HttpServer) {
     cors: { origin: "*", methods: ["GET", "POST"] },
     path: "/api/ws",
     transports: ["websocket", "polling"],
+    pingInterval: 25000,  // 服务端每25秒发送ping
+    pingTimeout: 20000,   // 20秒未收到pong则断开
   });
 
   // ─── Device namespace (Android phones connect here) ───
   const deviceNs = io.of("/device");
   deviceNs.on("connection", (socket: Socket) => {
     console.log(`[WS] Device socket connected: ${socket.id}`);
+
+    // 心跳保活：客户端发送 heartbeat，服务端回复 heartbeat_ack
+    socket.on("heartbeat", () => {
+      socket.emit("heartbeat_ack", { ts: Date.now() });
+      const deviceId = socket.data.deviceId;
+      if (deviceId) {
+        setDeviceOnline(deviceId, true).catch(() => {});
+      }
+    });
 
     // Device pairing flow
     socket.on("pair", async (data: { token: string; deviceInfo: any }) => {
@@ -209,6 +220,11 @@ export function initWebSocket(server: HttpServer) {
       socket.data.userId = data.userId;
       dashboardClients.set(socket.id, socket);
       socket.emit("registered", { success: true });
+    });
+
+    // Dashboard 心跳保活
+    socket.on("heartbeat", () => {
+      socket.emit("heartbeat_ack", { ts: Date.now() });
     });
 
     socket.on("disconnect", () => {

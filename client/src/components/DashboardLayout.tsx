@@ -22,18 +22,11 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useUnreadCounts } from "@/hooks/useUnread";
-import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft } from "lucide-react";
+import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft, Crown } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
-
-const menuItems = [
-  { icon: LayoutDashboard, label: "总堂", path: "/" },
-  { icon: Smartphone, label: "信使", path: "/devices", showUnread: true },
-  { icon: MessageSquare, label: "传书", path: "/messages" },
-  { icon: History, label: "卷宗", path: "/history" },
-];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 240;
@@ -121,9 +114,18 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
   const { total: totalUnread } = useUnreadCounts();
+
+  const menuItems = [
+    { icon: LayoutDashboard, label: "总堂", path: "/" },
+    { icon: Smartphone, label: "信使", path: "/devices", showUnread: true },
+    { icon: MessageSquare, label: "传书", path: "/messages" },
+    { icon: History, label: "卷宗", path: "/history" },
+    ...(user?.role === "admin" ? [{ icon: Crown, label: "后台", path: "/admin" }] : []),
+  ];
+
+  const activeMenuItem = menuItems.find(item => item.path === location);
 
   useEffect(() => {
     if (isCollapsed) {
@@ -232,7 +234,7 @@ function DashboardLayoutContent({
                       {user?.name || "无名侠"}
                     </p>
                     <p className="text-xs text-muted-foreground truncate mt-1 font-body">
-                      {user?.email || ""}
+                      @{user?.username || ""}
                     </p>
                   </div>
                 </button>

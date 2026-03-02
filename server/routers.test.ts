@@ -13,8 +13,12 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: any[] } {
     openId: "test-user-001",
     email: "test@example.com",
     name: "Test User",
-    loginMethod: "manus",
+    username: "testuser",
+    passwordHash: null,
+    loginMethod: "password",
     role: "admin",
+    maxDevices: 30,
+    isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
     lastSignedIn: new Date(),
@@ -176,7 +180,7 @@ describe("sms.send", () => {
 
     await expect(
       caller.sms.send({ deviceId: 99999, phoneNumber: "13800138000", body: "test" })
-    ).rejects.toThrow("Device not found");
+    ).rejects.toThrow("设备不存在");
   });
 });
 
@@ -196,7 +200,7 @@ describe("device.rename", () => {
 
     await expect(
       caller.device.rename({ id: 99999, name: "New Name" })
-    ).rejects.toThrow("Device not found");
+    ).rejects.toThrow("设备不存在");
   });
 });
 
@@ -207,6 +211,6 @@ describe("device.remove", () => {
 
     await expect(
       caller.device.remove({ id: 99999 })
-    ).rejects.toThrow("Device not found");
+    ).rejects.toThrow("设备不存在");
   });
 });

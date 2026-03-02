@@ -15,6 +15,27 @@
       "when": 1772370347625,
       "tag": "0001_perpetual_jasper_sitwell",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1772444824763,
+      "tag": "0002_keen_power_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1772445008360,
+      "tag": "0003_robust_tyger_tiger",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1772446428391,
+      "tag": "0004_useful_zeigeist",
+      "breakpoints": true
     }
   ]
 }

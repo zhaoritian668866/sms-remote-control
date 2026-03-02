@@ -9,7 +9,7 @@ import { useDashboardSocket } from "@/hooks/useSocket";
 import { useUnreadCounts } from "@/hooks/useUnread";
 import {
   Smartphone, Plus, Trash2, Edit2, Check, X, QrCode,
-  Battery, Signal, Loader2, ChevronRight
+  Battery, Signal, Loader2, ChevronRight, AlertTriangle, ExternalLink
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
@@ -29,12 +29,25 @@ export default function Devices() {
     enabled: !!user,
   });
 
+  const [showQuotaDialog, setShowQuotaDialog] = useState(false);
+  const [quotaLimit, setQuotaLimit] = useState(0);
+
+  // 获取客服链接
+  const { data: serviceConfig } = trpc.config.getServiceLink.useQuery();
+
   const generatePairing = trpc.pairing.generate.useMutation({
     onSuccess: () => {
       setShowQrDialog(true);
     },
     onError: (err) => {
-      toast.error("生成二维码失败：" + err.message);
+      const msg = err.message;
+      if (msg.startsWith("DEVICE_QUOTA_EXCEEDED:")) {
+        const limit = parseInt(msg.split(":")[1]) || 0;
+        setQuotaLimit(limit);
+        setShowQuotaDialog(true);
+      } else {
+        toast.error("生成二维码失败：" + msg);
+      }
     },
   });
 
@@ -287,6 +300,55 @@ export default function Devices() {
               ) : (
                 <Loader2 className="w-8 h-8 text-muted-foreground animate-spin" />
               )}
+            </div>
+          </DialogContent>
+        </Dialog>
+        {/* 设备超限弹窗 */}
+        <Dialog open={showQuotaDialog} onOpenChange={setShowQuotaDialog}>
+          <DialogContent className="bg-card border-foreground/15 max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="font-display text-lg tracking-widest text-foreground text-center flex items-center justify-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-vermilion" />
+                设备已达上限
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col items-center gap-4 py-4">
+              <p className="text-sm font-body text-muted-foreground text-center">
+                您当前的设备配额为 <span className="text-foreground font-bold">{quotaLimit}</span> 台，已全部使用。
+              </p>
+              <p className="text-sm font-body text-muted-foreground text-center">
+                如需添加更多设备，请联系客服购买更高配额套餐。
+              </p>
+              {serviceConfig?.link ? (
+                <a
+                  href={serviceConfig.link.startsWith("http") ? serviceConfig.link : undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-6 py-2.5 bg-foreground/10 border border-foreground/20 text-foreground hover:bg-foreground/15 transition-colors font-serif text-sm tracking-wider rounded"
+                  onClick={() => {
+                    if (!serviceConfig.link.startsWith("http")) {
+                      // 非链接类型（如微信号），复制到剪贴板
+                      navigator.clipboard.writeText(serviceConfig.link).then(() => {
+                        toast.success("客服联系方式已复制到剪贴板");
+                      });
+                    }
+                  }}
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  联系客服
+                </a>
+              ) : (
+                <p className="text-xs font-body text-muted-foreground/50">
+                  请联系系统管理员获取客服联系方式
+                </p>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => setShowQuotaDialog(false)}
+                className="mt-2 border-foreground/15 text-muted-foreground hover:text-foreground font-body text-sm"
+              >
+                我知道了
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

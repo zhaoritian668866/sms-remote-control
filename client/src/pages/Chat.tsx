@@ -104,6 +104,25 @@ export default function Chat() {
     setAutoScroll(scrollHeight - scrollTop - clientHeight < 100);
   }, []);
 
+  // 已读联系人记录（deviceId + phoneNumber -> lastReadTimestamp）
+  const [readTimestamps, setReadTimestamps] = useState<Record<string, number>>(() => {
+    try {
+      const stored = localStorage.getItem(`sms_contact_read_${deviceId}`);
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
+
+  // 标记联系人已读
+  const markContactRead = useCallback((phoneNumber: string) => {
+    const key = phoneNumber;
+    const now = Date.now();
+    setReadTimestamps(prev => {
+      const next = { ...prev, [key]: now };
+      try { localStorage.setItem(`sms_contact_read_${deviceId}`, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [deviceId]);
+
   // 获取所有联系人号码（去重，带最后消息时间和未读数）
   const contacts = useMemo(() => {
     if (!messageList) return [];
@@ -112,17 +131,26 @@ export default function Chat() {
     const sorted = [...messageList].sort((a, b) => a.smsTimestamp - b.smsTimestamp);
     for (const m of sorted) {
       const existing = contactMap.get(m.phoneNumber);
+      const lastReadTs = readTimestamps[m.phoneNumber] || 0;
+      // 只计算收到的消息的未读数（发出的不算未读）
+      const isUnread = m.direction === "incoming" && m.smsTimestamp > lastReadTs;
       contactMap.set(m.phoneNumber, {
         number: m.phoneNumber,
         lastMsg: m.body.length > 30 ? m.body.slice(0, 30) + "..." : m.body,
         lastTime: m.smsTimestamp,
-        unread: (existing?.unread || 0),
+        unread: (existing?.unread || 0) + (isUnread ? 1 : 0),
         name: m.contactName || existing?.name,
       });
     }
-    // 按最后消息时间倒序
-    return Array.from(contactMap.values()).sort((a, b) => b.lastTime - a.lastTime);
-  }, [messageList]);
+    // 未读消息联系人置顶，然后按最后消息时间倒序
+    return Array.from(contactMap.values()).sort((a, b) => {
+      // 有未读的排前面
+      if (a.unread > 0 && b.unread === 0) return -1;
+      if (a.unread === 0 && b.unread > 0) return 1;
+      // 同级别按时间倒序
+      return b.lastTime - a.lastTime;
+    });
+  }, [messageList, readTimestamps]);
 
   // 搜索过滤联系人
   const filteredContacts = useMemo(() => {
@@ -138,8 +166,9 @@ export default function Chat() {
   useEffect(() => {
     if (!selectedContact && contacts.length > 0) {
       setSelectedContact(contacts[0].number);
+      markContactRead(contacts[0].number);
     }
-  }, [contacts, selectedContact]);
+  }, [contacts, selectedContact, markContactRead]);
 
   // 当前联系人的消息（按时间正序）
   const currentMessages = useMemo(() => {
@@ -380,26 +409,44 @@ export default function Chat() {
               filteredContacts.map(contact => (
                 <button
                   key={contact.number}
-                  onClick={() => { setSelectedContact(contact.number); setContactSearch(""); }}
+                  onClick={() => {
+                    setSelectedContact(contact.number);
+                    setContactSearch("");
+                    markContactRead(contact.number);
+                  }}
                   className={`w-full text-left flex items-center gap-3 px-3 py-3 transition-colors border-b border-foreground/5 ${
                     selectedContact === contact.number
                       ? "bg-foreground/8"
                       : "hover:bg-foreground/3"
                   }`}
                 >
-                  <div className="w-9 h-9 rounded-sm bg-foreground/5 border border-foreground/10 flex items-center justify-center shrink-0">
+                  <div className="relative w-9 h-9 rounded-sm bg-foreground/5 border border-foreground/10 flex items-center justify-center shrink-0">
                     <Phone className="w-3.5 h-3.5 text-muted-foreground" />
+                    {/* 未读红点 */}
+                    {contact.unread > 0 && selectedContact !== contact.number && (
+                      <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-vermilion text-white text-[10px] font-body font-bold flex items-center justify-center leading-none shadow-sm">
+                        {contact.unread > 99 ? "99+" : contact.unread}
+                      </span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-serif text-foreground truncate">
+                      <span className={`text-sm font-serif truncate ${
+                        contact.unread > 0 && selectedContact !== contact.number
+                          ? "text-foreground font-bold"
+                          : "text-foreground"
+                      }`}>
                         {contact.name || contact.number}
                       </span>
                       <span className="text-xs font-body text-muted-foreground/50 shrink-0 ml-2">
                         {formatShortTime(contact.lastTime)}
                       </span>
                     </div>
-                    <p className="text-xs font-body text-muted-foreground/60 truncate mt-0.5">
+                    <p className={`text-xs font-body truncate mt-0.5 ${
+                      contact.unread > 0 && selectedContact !== contact.number
+                        ? "text-foreground/70"
+                        : "text-muted-foreground/60"
+                    }`}>
                       {contact.lastMsg}
                     </p>
                   </div>

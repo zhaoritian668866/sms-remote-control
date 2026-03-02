@@ -10,15 +10,19 @@ import Devices from "./pages/Devices";
 import Messages from "./pages/Messages";
 import History from "./pages/History";
 import Chat from "./pages/Chat";
+import Login from "./pages/Login";
+import Admin from "./pages/Admin";
 
 function Router() {
   return (
     <Switch>
+      <Route path={"/login"} component={Login} />
       <Route path={"/"} component={Home} />
       <Route path={"/devices"} component={Devices} />
       <Route path={"/messages"} component={Messages} />
       <Route path={"/history"} component={History} />
       <Route path={"/chat/:id"} component={Chat} />
+      <Route path={"/admin"} component={Admin} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
