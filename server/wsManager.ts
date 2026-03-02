@@ -251,7 +251,7 @@ export function isDeviceConnected(deviceId: string): boolean {
 }
 
 // Broadcast to all dashboard clients of a specific user
-function broadcastToDashboard(userId: number, event: string, data: any) {
+export function broadcastToDashboard(userId: number, event: string, data: any) {
   dashboardClients.forEach((socket) => {
     if (socket.data.userId === userId) {
       socket.emit(event, data);

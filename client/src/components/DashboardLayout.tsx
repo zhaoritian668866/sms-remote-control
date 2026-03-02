@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
+import { useUnreadCounts } from "@/hooks/useUnread";
 import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -29,7 +30,7 @@ import { Button } from "./ui/button";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "总堂", path: "/" },
-  { icon: Smartphone, label: "信使", path: "/devices" },
+  { icon: Smartphone, label: "信使", path: "/devices", showUnread: true },
   { icon: MessageSquare, label: "传书", path: "/messages" },
   { icon: History, label: "卷宗", path: "/history" },
 ];
@@ -122,6 +123,7 @@ function DashboardLayoutContent({
   const sidebarRef = useRef<HTMLDivElement>(null);
   const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
+  const { total: totalUnread } = useUnreadCounts();
 
   useEffect(() => {
     if (isCollapsed) {
@@ -186,20 +188,28 @@ function DashboardLayoutContent({
           <SidebarContent className="gap-0">
             <SidebarMenu className="px-2 py-3">
               {menuItems.map(item => {
-                const isActive = location === item.path;
+                const isActive = location === item.path || (item.path === "/devices" && location.startsWith("/chat/"));
+                const showBadge = item.showUnread && totalUnread > 0;
                 return (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton
                       isActive={isActive}
                       onClick={() => setLocation(item.path)}
                       tooltip={item.label}
-                      className={`h-11 transition-all font-serif text-sm tracking-wider ${
+                      className={`h-11 transition-all font-serif text-sm tracking-wider relative ${
                         isActive
                           ? "bg-foreground/8 text-foreground border-l-2 border-foreground/40"
                           : "text-muted-foreground hover:text-foreground hover:bg-foreground/5"
                       }`}
                     >
-                      <item.icon className={`h-4 w-4 ${isActive ? "text-foreground" : ""}`} />
+                      <div className="relative">
+                        <item.icon className={`h-4 w-4 ${isActive ? "text-foreground" : ""}`} />
+                        {showBadge && (
+                          <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-vermilion text-white text-[10px] font-body font-bold flex items-center justify-center leading-none">
+                            {totalUnread > 99 ? "99+" : totalUnread}
+                          </span>
+                        )}
+                      </div>
                       <span>{item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

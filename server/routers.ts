@@ -16,8 +16,9 @@ import {
   getMessagesByDeviceId,
   createMessage,
   getDeviceByDeviceId,
+  updateMessageStatus,
 } from "./db";
-import { sendSmsToDevice, isDeviceConnected } from "./wsManager";
+import { sendSmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
 
 export const appRouter = router({
   system: systemRouter,
@@ -74,14 +75,13 @@ export const appRouter = router({
   // ─── Pairing ───
   pairing: router({
     generate: protectedProcedure.mutation(async ({ ctx }) => {
-      // Expire old tokens
       await expireOldTokens(ctx.user.id);
 
       const token = nanoid(32);
       const origin = ctx.req.headers.origin || ctx.req.headers.referer || `${ctx.req.protocol}://${ctx.req.get("host")}`;
       const wsUrl = origin.replace(/^http/, "ws") + "/api/ws";
 
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
       await createPairingToken({
         userId: ctx.user.id,
@@ -91,7 +91,6 @@ export const appRouter = router({
         expiresAt,
       });
 
-      // Generate QR code data URL
       const qrPayload = JSON.stringify({
         token,
         wsUrl,
@@ -100,7 +99,7 @@ export const appRouter = router({
       const qrDataUrl = await QRCode.toDataURL(qrPayload, {
         width: 300,
         margin: 2,
-        color: { dark: "#00ffff", light: "#0a0a0f" },
+        color: { dark: "#d4d4d4", light: "#0a0a0f" },
       });
 
       return {
@@ -117,7 +116,7 @@ export const appRouter = router({
       .input(z.object({
         deviceId: z.number().optional(),
         search: z.string().optional(),
-        limit: z.number().min(1).max(200).default(50),
+        limit: z.number().min(1).max(500).default(200),
         offset: z.number().min(0).default(0),
       }))
       .query(async ({ ctx, input }) => {
@@ -150,7 +149,7 @@ export const appRouter = router({
           throw new Error("Device not found");
         }
 
-        // Save outgoing message
+        // Save outgoing message as pending
         const msg = await createMessage({
           deviceId: input.deviceId,
           direction: "outgoing",
@@ -163,8 +162,20 @@ export const appRouter = router({
         // Send to device via WebSocket
         const result = await sendSmsToDevice(device.deviceId, input.phoneNumber, input.body);
 
+        // Update message status based on result
+        const newStatus = result.success ? "sent" : "failed";
+        await updateMessageStatus(msg.id, newStatus);
+
+        // Broadcast status update to dashboard so UI updates in real-time
+        broadcastToDashboard(ctx.user.id, "sms_status_update", {
+          messageId: msg.id,
+          deviceId: input.deviceId,
+          status: newStatus,
+          error: result.error,
+        });
+
         return {
-          message: msg,
+          message: { ...msg, status: newStatus },
           sendResult: result,
         };
       }),

@@ -247,6 +247,12 @@ export async function getAllMessagesByUserId(userId: number, opts?: { limit?: nu
     .offset(opts?.offset ?? 0);
 }
 
+export async function updateMessageStatus(id: number, status: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(messages).set({ status: status as any }).where(eq(messages.id, id));
+}
+
 export async function getMessageCountByDeviceId(deviceId: number) {
   const db = await getDb();
   if (!db) return 0;

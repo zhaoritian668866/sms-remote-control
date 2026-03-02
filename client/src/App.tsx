@@ -4,6 +4,7 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { GlobalNotification } from "./components/GlobalNotification";
 import Home from "./pages/Home";
 import Devices from "./pages/Devices";
 import Messages from "./pages/Messages";
@@ -30,6 +31,7 @@ function App() {
       <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
           <Toaster />
+          <GlobalNotification />
           <Router />
         </TooltipProvider>
       </ThemeProvider>

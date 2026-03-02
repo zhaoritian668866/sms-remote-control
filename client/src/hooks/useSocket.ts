@@ -36,6 +36,7 @@ export function useDashboardSocket(userId: number | undefined) {
       "device_offline",
       "device_status",
       "new_sms",
+      "sms_status_update",
     ];
 
     events.forEach((event) => {
