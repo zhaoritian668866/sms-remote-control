@@ -296,6 +296,17 @@
     100% { width: 100%; }
   }
 
+  @keyframes brush-stroke-v {
+    0% { height: 0; }
+    100% { height: 12px; }
+  }
+
+  @keyframes seal-stamp {
+    0% { opacity: 0; transform: rotate(-3deg) scale(1.5); }
+    60% { opacity: 1; transform: rotate(-3deg) scale(0.95); }
+    100% { opacity: 1; transform: rotate(-3deg) scale(1); }
+  }
+
   .animate-brush {
     animation: brush-stroke 0.6s ease-out;
   }

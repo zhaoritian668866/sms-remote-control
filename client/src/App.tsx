@@ -6,6 +6,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { GlobalNotification } from "./components/GlobalNotification";
 import Home from "./pages/Home";
+import SmartHome from "./pages/SmartHome";
 import Devices from "./pages/Devices";
 import Messages from "./pages/Messages";
 import History from "./pages/History";
@@ -17,12 +18,14 @@ import ExportNumbers from "./pages/ExportNumbers";
 import Templates from "./pages/Templates";
 import BulkSend from "./pages/BulkSend";
 import Auditor from "./pages/Auditor";
+import Landing from "./pages/Landing";
 
 function Router() {
   return (
     <Switch>
+      <Route path={"/landing"} component={Landing} />
       <Route path={"/login"} component={Login} />
-      <Route path={"/"} component={Home} />
+      <Route path={"/"} component={SmartHome} />
       <Route path={"/devices"} component={Devices} />
       <Route path={"/messages"} component={Messages} />
       <Route path={"/history"} component={History} />
