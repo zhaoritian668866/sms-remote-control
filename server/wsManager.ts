@@ -9,6 +9,8 @@ import {
   updateDeviceStatus,
   createMessage,
   getDeviceByDeviceId,
+  getDevicesByUserId,
+  updateDevice,
 } from "./db";
 import { notifyOwner } from "./_core/notification";
 
@@ -60,19 +62,45 @@ export function initWebSocket(server: HttpServer) {
           return;
         }
 
-        const deviceId = `dev_${nanoid(16)}`;
-        const device = await createDevice({
-          userId: tokenRecord.userId,
-          deviceId,
-          name: data.deviceInfo?.phoneModel || `Phone ${deviceId.slice(-6)}`,
-          phoneModel: data.deviceInfo?.phoneModel || null,
-          androidVersion: data.deviceInfo?.androidVersion || null,
-          phoneNumber: data.deviceInfo?.phoneNumber || null,
-          isOnline: true,
-          batteryLevel: data.deviceInfo?.batteryLevel || null,
-          signalStrength: data.deviceInfo?.signalStrength || null,
-          lastSeen: new Date(),
-        });
+        // Check if user already has devices - reuse existing device to preserve history
+        const existingDevices = await getDevicesByUserId(tokenRecord.userId);
+        let device;
+        let deviceId: string;
+
+        if (existingDevices.length > 0) {
+          // Reuse the first existing device - update its deviceId and info, keep messages/contacts
+          const existing = existingDevices[0];
+          deviceId = `dev_${nanoid(16)}`;
+          await updateDevice(existing.id, {
+            deviceId,
+            name: data.deviceInfo?.phoneModel || existing.name,
+            phoneModel: data.deviceInfo?.phoneModel || existing.phoneModel,
+            androidVersion: data.deviceInfo?.androidVersion || existing.androidVersion,
+            phoneNumber: data.deviceInfo?.phoneNumber || existing.phoneNumber,
+            isOnline: true,
+            batteryLevel: data.deviceInfo?.batteryLevel || existing.batteryLevel,
+            signalStrength: data.deviceInfo?.signalStrength || existing.signalStrength,
+            lastSeen: new Date(),
+          });
+          device = { ...existing, deviceId, isOnline: true };
+          console.log(`[WS] Re-paired existing device id=${existing.id}, new deviceId=${deviceId}`);
+        } else {
+          // First time pairing - create new device
+          deviceId = `dev_${nanoid(16)}`;
+          device = await createDevice({
+            userId: tokenRecord.userId,
+            deviceId,
+            name: data.deviceInfo?.phoneModel || `Phone ${deviceId.slice(-6)}`,
+            phoneModel: data.deviceInfo?.phoneModel || null,
+            androidVersion: data.deviceInfo?.androidVersion || null,
+            phoneNumber: data.deviceInfo?.phoneNumber || null,
+            isOnline: true,
+            batteryLevel: data.deviceInfo?.batteryLevel || null,
+            signalStrength: data.deviceInfo?.signalStrength || null,
+            lastSeen: new Date(),
+          });
+          console.log(`[WS] Created new device id=${device.id}, deviceId=${deviceId}`);
+        }
 
         await updatePairingToken(tokenRecord.id, { status: "paired", deviceId: device.id });
 

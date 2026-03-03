@@ -224,10 +224,14 @@ export const appRouter = router({
   // ─── Pairing ───
   pairing: router({
     generate: protectedProcedure.mutation(async ({ ctx }) => {
-      // Check device quota
+      // Check device quota - but allow re-pairing if user already has devices
+      // (re-pairing reuses existing device record, preserving history)
       const currentCount = await getDeviceCountByUserId(ctx.user.id);
       const maxDevices = ctx.user.maxDevices ?? 1;
-      if (currentCount >= maxDevices) {
+      const existingDevices = await getDevicesByUserId(ctx.user.id);
+      // Only block if trying to add MORE devices than quota allows
+      // If user already has devices, they can re-pair (reuse existing)
+      if (currentCount >= maxDevices && existingDevices.length === 0) {
         throw new Error(`DEVICE_QUOTA_EXCEEDED:${maxDevices}`);
       }
 
