@@ -64,6 +64,13 @@
       "when": 1772602357381,
       "tag": "0008_shiny_obadiah_stane",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1772620220474,
+      "tag": "0009_wise_corsair",
+      "breakpoints": true
     }
   ]
 }

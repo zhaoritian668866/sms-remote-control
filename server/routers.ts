@@ -62,6 +62,9 @@ import {
   getRunningTaskByDeviceId,
   updateBulkTask,
   normalizePhone,
+  getPinnedContacts,
+  pinContact,
+  unpinContact,
 } from "./db";
 import { sendSmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
 
@@ -948,6 +951,40 @@ export const appRouter = router({
     groups: auditorProcedure.query(async () => {
       return getAllGroups();
     }),
+  }),
+
+  // ─── Pinned Contacts ───
+  pinned: router({
+    list: protectedProcedure
+      .input(z.object({ deviceId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) return [];
+        return getPinnedContacts(input.deviceId);
+      }),
+
+    pin: protectedProcedure
+      .input(z.object({ deviceId: z.number(), phoneNumber: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) {
+          throw new Error("设备不存在");
+        }
+        const phone = normalizePhone(input.phoneNumber);
+        return pinContact(input.deviceId, phone);
+      }),
+
+    unpin: protectedProcedure
+      .input(z.object({ deviceId: z.number(), phoneNumber: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) {
+          throw new Error("设备不存在");
+        }
+        const phone = normalizePhone(input.phoneNumber);
+        await unpinContact(input.deviceId, phone);
+        return { success: true };
+      }),
   }),
 
   // ─── Public Config (for frontend to read customer service link etc.) ───

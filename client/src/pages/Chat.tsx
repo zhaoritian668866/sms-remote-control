@@ -7,7 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { useDashboardSocket } from "@/hooks/useSocket";
 import {
   ArrowLeft, Send, Loader2, Smartphone, Battery, Signal,
-  Phone, ChevronDown, Search, UserPlus, X, MessageSquare
+  Phone, ChevronDown, Search, UserPlus, X, MessageSquare, Pin, PinOff
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { toast } from "sonner";
@@ -48,6 +48,48 @@ export default function Chat() {
     { deviceId, limit: 500, offset: 0 },
     { enabled: !!user && deviceId > 0, refetchInterval: 10000 }
   );
+
+  // 获取置顶联系人列表
+  const { data: pinnedList } = trpc.pinned.list.useQuery(
+    { deviceId },
+    { enabled: !!user && deviceId > 0 }
+  );
+
+  // 置顶联系人号码集合
+  const pinnedSet = useMemo(() => {
+    if (!pinnedList) return new Set<string>();
+    return new Set(pinnedList.map(p => p.phoneNumber));
+  }, [pinnedList]);
+
+  // 置顶操作
+  const pinMutation = trpc.pinned.pin.useMutation({
+    onSuccess: () => {
+      utils.pinned.list.invalidate({ deviceId });
+      toast.success("已置顶");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const unpinMutation = trpc.pinned.unpin.useMutation({
+    onSuccess: () => {
+      utils.pinned.list.invalidate({ deviceId });
+      toast.success("已取消置顶");
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
+  });
+
+  const handleTogglePin = (phoneNumber: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (pinnedSet.has(phoneNumber)) {
+      unpinMutation.mutate({ deviceId, phoneNumber });
+    } else {
+      pinMutation.mutate({ deviceId, phoneNumber });
+    }
+  };
 
   // 发送短信
   const sendMutation = trpc.sms.send.useMutation({
@@ -142,15 +184,20 @@ export default function Chat() {
         name: m.contactName || existing?.name,
       });
     }
-    // 未读消息联系人置顶，然后按最后消息时间倒序
+    // 排序逻辑：置顶 > 未读 > 最后消息时间
     return Array.from(contactMap.values()).sort((a, b) => {
-      // 有未读的排前面
+      const aPinned = pinnedSet.has(a.number);
+      const bPinned = pinnedSet.has(b.number);
+      // 置顶的排最前面
+      if (aPinned && !bPinned) return -1;
+      if (!aPinned && bPinned) return 1;
+      // 同为置顶或同为非置顶时，有未读的排前面
       if (a.unread > 0 && b.unread === 0) return -1;
       if (a.unread === 0 && b.unread > 0) return 1;
       // 同级别按时间倒序
       return b.lastTime - a.lastTime;
     });
-  }, [messageList, readTimestamps]);
+  }, [messageList, readTimestamps, pinnedSet]);
 
   // 搜索过滤联系人
   const filteredContacts = useMemo(() => {
@@ -406,52 +453,76 @@ export default function Chat() {
                 </span>
               </div>
             ) : (
-              filteredContacts.map(contact => (
-                <button
-                  key={contact.number}
-                  onClick={() => {
-                    setSelectedContact(contact.number);
-                    setContactSearch("");
-                    markContactRead(contact.number);
-                  }}
-                  className={`w-full text-left flex items-center gap-3 px-3 py-3 transition-colors border-b border-foreground/5 ${
-                    selectedContact === contact.number
-                      ? "bg-foreground/8"
-                      : "hover:bg-foreground/3"
-                  }`}
-                >
-                  <div className="relative w-9 h-9 rounded-sm bg-foreground/5 border border-foreground/10 flex items-center justify-center shrink-0">
-                    <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-                    {/* 未读红点 */}
-                    {contact.unread > 0 && selectedContact !== contact.number && (
-                      <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-vermilion text-white text-[10px] font-body font-bold flex items-center justify-center leading-none shadow-sm">
-                        {contact.unread > 99 ? "99+" : contact.unread}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className={`text-sm font-serif truncate ${
-                        contact.unread > 0 && selectedContact !== contact.number
-                          ? "text-foreground font-bold"
-                          : "text-foreground"
-                      }`}>
-                        {contact.name || contact.number}
-                      </span>
-                      <span className="text-xs font-body text-muted-foreground/50 shrink-0 ml-2">
-                        {formatShortTime(contact.lastTime)}
-                      </span>
+              filteredContacts.map(contact => {
+                const isPinned = pinnedSet.has(contact.number);
+                return (
+                  <button
+                    key={contact.number}
+                    onClick={() => {
+                      setSelectedContact(contact.number);
+                      setContactSearch("");
+                      markContactRead(contact.number);
+                    }}
+                    className={`group w-full text-left flex items-center gap-3 px-3 py-3 transition-colors border-b border-foreground/5 ${
+                      selectedContact === contact.number
+                        ? "bg-foreground/8"
+                        : isPinned
+                          ? "bg-foreground/[0.03] hover:bg-foreground/6"
+                          : "hover:bg-foreground/3"
+                    }`}
+                  >
+                    <div className="relative w-9 h-9 rounded-sm bg-foreground/5 border border-foreground/10 flex items-center justify-center shrink-0">
+                      <Phone className="w-3.5 h-3.5 text-muted-foreground" />
+                      {/* 未读红点 */}
+                      {contact.unread > 0 && selectedContact !== contact.number && (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-vermilion text-white text-[10px] font-body font-bold flex items-center justify-center leading-none shadow-sm">
+                          {contact.unread > 99 ? "99+" : contact.unread}
+                        </span>
+                      )}
                     </div>
-                    <p className={`text-xs font-body truncate mt-0.5 ${
-                      contact.unread > 0 && selectedContact !== contact.number
-                        ? "text-foreground/70"
-                        : "text-muted-foreground/60"
-                    }`}>
-                      {contact.lastMsg}
-                    </p>
-                  </div>
-                </button>
-              ))
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-sm font-serif truncate ${
+                          contact.unread > 0 && selectedContact !== contact.number
+                            ? "text-foreground font-bold"
+                            : "text-foreground"
+                        }`}>
+                          {contact.name || contact.number}
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0 ml-2">
+                          {/* 置顶图标（已置顶时常显，未置顶时 hover 显示） */}
+                          <span
+                            onClick={(e) => handleTogglePin(contact.number, e)}
+                            className={`p-0.5 rounded transition-all cursor-pointer ${
+                              isPinned
+                                ? "text-amber-500/80 hover:text-amber-500"
+                                : "text-muted-foreground/0 group-hover:text-muted-foreground/40 hover:!text-muted-foreground/70"
+                            }`}
+                            title={isPinned ? "取消置顶" : "置顶"}
+                          >
+                            {isPinned ? <PinOff className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
+                          </span>
+                          <span className="text-xs font-body text-muted-foreground/50">
+                            {formatShortTime(contact.lastTime)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {isPinned && (
+                          <span className="text-[10px] text-amber-500/60 font-body shrink-0">[置顶]</span>
+                        )}
+                        <p className={`text-xs font-body truncate mt-0.5 ${
+                          contact.unread > 0 && selectedContact !== contact.number
+                            ? "text-foreground/70"
+                            : "text-muted-foreground/60"
+                        }`}>
+                          {contact.lastMsg}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
             )}
           </div>
         </div>
@@ -471,8 +542,26 @@ export default function Chat() {
                 </span>
               )}
             </div>
-            <div className="text-xs font-body text-muted-foreground/50">
-              {currentMessages.length} 条消息
+            <div className="flex items-center gap-3">
+              {selectedContact && (
+                <button
+                  onClick={(e) => handleTogglePin(selectedContact, e)}
+                  className={`flex items-center gap-1 text-xs font-body px-2 py-1 rounded transition-colors border ${
+                    pinnedSet.has(selectedContact)
+                      ? "text-amber-500 border-amber-500/30 hover:bg-amber-500/10"
+                      : "text-muted-foreground border-foreground/10 hover:bg-foreground/5"
+                  }`}
+                >
+                  {pinnedSet.has(selectedContact) ? (
+                    <><PinOff className="w-3 h-3" /> 取消置顶</>
+                  ) : (
+                    <><Pin className="w-3 h-3" /> 置顶</>
+                  )}
+                </button>
+              )}
+              <div className="text-xs font-body text-muted-foreground/50">
+                {currentMessages.length} 条消息
+              </div>
             </div>
           </div>
 

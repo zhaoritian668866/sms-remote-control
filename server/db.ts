@@ -1,6 +1,6 @@
 import { eq, and, desc, like, or, gte, lte, sql, asc, count, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, devices, pairingTokens, messages, systemConfig, groups, smsTemplates, deviceContacts, bulkTasks, type InsertDevice, type InsertPairingToken, type InsertMessage, type InsertGroup, type InsertSmsTemplate, type InsertDeviceContact, type InsertBulkTask } from "../drizzle/schema";
+import { InsertUser, users, devices, pairingTokens, messages, systemConfig, groups, smsTemplates, deviceContacts, bulkTasks, pinnedContacts, type InsertDevice, type InsertPairingToken, type InsertMessage, type InsertGroup, type InsertSmsTemplate, type InsertDeviceContact, type InsertBulkTask } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -799,4 +799,42 @@ export async function deleteBulkTask(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(bulkTasks).where(eq(bulkTasks.id, id));
+}
+
+// ─── Pinned Contacts ───
+
+export async function getPinnedContacts(deviceId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(pinnedContacts)
+    .where(eq(pinnedContacts.deviceId, deviceId))
+    .orderBy(desc(pinnedContacts.pinnedAt));
+}
+
+export async function pinContact(deviceId: number, phoneNumber: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Check if already pinned
+  const existing = await db.select().from(pinnedContacts)
+    .where(and(eq(pinnedContacts.deviceId, deviceId), eq(pinnedContacts.phoneNumber, phoneNumber)))
+    .limit(1);
+  if (existing.length > 0) return existing[0];
+  // Check pin limit (max 10)
+  const currentCount = await db.select({ count: sql<number>`count(*)` }).from(pinnedContacts)
+    .where(eq(pinnedContacts.deviceId, deviceId));
+  if ((currentCount[0]?.count ?? 0) >= 10) {
+    throw new Error("置顶联系人已达上限（最多10个）");
+  }
+  await db.insert(pinnedContacts).values({ deviceId, phoneNumber });
+  const result = await db.select().from(pinnedContacts)
+    .where(and(eq(pinnedContacts.deviceId, deviceId), eq(pinnedContacts.phoneNumber, phoneNumber)))
+    .limit(1);
+  return result[0];
+}
+
+export async function unpinContact(deviceId: number, phoneNumber: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(pinnedContacts)
+    .where(and(eq(pinnedContacts.deviceId, deviceId), eq(pinnedContacts.phoneNumber, phoneNumber)));
 }

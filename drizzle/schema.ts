@@ -191,3 +191,16 @@ export const bulkTasks = mysqlTable("bulk_tasks", {
 
 export type BulkTask = typeof bulkTasks.$inferSelect;
 export type InsertBulkTask = typeof bulkTasks.$inferInsert;
+
+/**
+ * Pinned contacts - each device can pin up to 10 contacts to the top of chat list.
+ */
+export const pinnedContacts = mysqlTable("pinned_contacts", {
+  id: int("id").autoincrement().primaryKey(),
+  deviceId: int("deviceId").notNull(),
+  phoneNumber: varchar("phoneNumber", { length: 32 }).notNull(),
+  pinnedAt: timestamp("pinnedAt").defaultNow().notNull(),
+});
+
+export type PinnedContact = typeof pinnedContacts.$inferSelect;
+export type InsertPinnedContact = typeof pinnedContacts.$inferInsert;
