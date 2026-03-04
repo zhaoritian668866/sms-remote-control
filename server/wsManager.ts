@@ -27,8 +27,10 @@ export function initWebSocket(server: HttpServer) {
     cors: { origin: "*", methods: ["GET", "POST"] },
     path: "/api/ws",
     transports: ["websocket", "polling"],
-    pingInterval: 25000,  // 服务端每25秒发送ping
-    pingTimeout: 20000,   // 20秒未收到pong则断开
+    pingInterval: 15000,  // 服务端每15秒发送ping
+    pingTimeout: 10000,   // 10秒未收到pong则断开
+    connectTimeout: 10000, // 连接超时
+    allowUpgrades: true,
   });
 
   // ─── Device namespace (Android phones connect here) ───
