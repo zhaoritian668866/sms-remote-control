@@ -409,11 +409,22 @@ export async function expireOldTokens(userId: number) {
 
 // ─── Message Queries ───
 
+/** Normalize phone number: strip +86, spaces, dashes */
+export function normalizePhone(phone: string): string {
+  let n = phone.replace(/[\s\-()]/g, "");
+  if (n.startsWith("+86")) n = n.slice(3);
+  else if (n.startsWith("0086")) n = n.slice(4);
+  else if (n.startsWith("86") && n.length === 13) n = n.slice(2);
+  return n;
+}
+
 export async function createMessage(data: InsertMessage) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(messages).values(data);
-  return { id: Number(result[0].insertId), ...data };
+  // Normalize phone number before saving
+  const normalized = { ...data, phoneNumber: normalizePhone(data.phoneNumber) };
+  const result = await db.insert(messages).values(normalized);
+  return { id: Number(result[0].insertId), ...normalized };
 }
 
 export async function getMessagesByDeviceId(deviceId: number, opts?: { limit?: number; offset?: number; search?: string; startTime?: number; endTime?: number }) {

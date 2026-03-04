@@ -11,7 +11,7 @@
 
 import { getBulkTaskById, updateBulkTask, getTemplateById } from "./db";
 import { sendSmsToDevice, broadcastToDashboard, isDeviceConnected } from "./wsManager";
-import { createMessage } from "./db";
+import { createMessage, normalizePhone } from "./db";
 import { getDeviceById } from "./db";
 
 // Active task timers: taskId -> timer handle
@@ -148,13 +148,14 @@ async function executeBulkStep(taskId: number) {
     }
 
     // Send SMS via WebSocket
-    const result = await sendSmsToDevice(device.deviceId, contact.phoneNumber, messageBody);
+    const phone = normalizePhone(contact.phoneNumber);
+    const result = await sendSmsToDevice(device.deviceId, phone, messageBody);
 
     // Save message to DB
     const msg = await createMessage({
       deviceId: task.deviceId,
       direction: "outgoing",
-      phoneNumber: contact.phoneNumber,
+      phoneNumber: phone,
       contactName: contact.name,
       body: messageBody,
       status: result.success ? "sent" : "failed",

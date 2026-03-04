@@ -1,0 +1,82 @@
+{
+  "query": "SELECT id, deviceId, direction, phoneNumber, contactName, LEFT(body, 30) as bodyPreview, smsTimestamp FROM messages ORDER BY smsTimestamp DESC LIMIT 30;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user r4xdFagEgpfWtwT.root --database 4rTHqCojuh9Vnb7GsHmjrf --execute SELECT id, deviceId, direction, phoneNumber, contactName, LEFT(body, 30) as bodyPreview, smsTimestamp FROM messages ORDER BY smsTimestamp DESC LIMIT 30;",
+  "rows": [
+    {
+      "id": "30026",
+      "deviceId": "30009",
+      "direction": "outgoing",
+      "phoneNumber": "+855962323632",
+      "contactName": "NULL",
+      "bodyPreview": "1",
+      "smsTimestamp": "1772464892745"
+    },
+    {
+      "id": "30025",
+      "deviceId": "30009",
+      "direction": "outgoing",
+      "phoneNumber": "19515802188",
+      "contactName": "NULL",
+      "bodyPreview": "heello",
+      "smsTimestamp": "1772464826418"
+    },
+    {
+      "id": "30024",
+      "deviceId": "30009",
+      "direction": "outgoing",
+      "phoneNumber": "19515802188",
+      "contactName": "NULL",
+      "bodyPreview": "heello",
+      "smsTimestamp": "1772464826237"
+    },
+    {
+      "id": "30023",
+      "deviceId": "30009",
+      "direction": "outgoing",
+      "phoneNumber": "19515802188",
+      "contactName": "NULL",
+      "bodyPreview": "你好",
+      "smsTimestamp": "1772464822262"
+    },
+    {
+      "id": "30022",
+      "deviceId": "30009",
+      "direction": "outgoing",
+      "phoneNumber": "19515802188",
+      "contactName": "苛",
+      "bodyPreview": "苛女士，在干什么",
+      "smsTimestamp": "1772464396099"
+    },
+    {
+      "id": "30021",
+      "deviceId": "30009",
+      "direction": "outgoing",
+      "phoneNumber": "19845233828",
+      "contactName": "苛",
+      "bodyPreview": "｛姓名｝美女",
+      "smsTimestamp": "1772464311047"
+    },
+    {
+      "id": "30020",
+      "deviceId": "30009",
+      "direction": "outgoing",
+      "phoneNumber": "13855280941",
+      "contactName": "NULL",
+      "bodyPreview": "3",
+      "smsTimestamp": "1772464019654"
+    },
+    {
+      "id": "30019",
+      "deviceId": "30009",
+      "direction": "outgoing",
+      "phoneNumber": "13855280941",
+      "contactName": "NULL",
+      "bodyPreview": "meinv",
+      "smsTimestamp": "1772463982866"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tdeviceId\tdirection\tphoneNumber\tcontactName\tbodyPreview\tsmsTimestamp\n30026\t30009\toutgoing\t+855962323632\tNULL\t1\t1772464892745\n30025\t30009\toutgoing\t19515802188\tNULL\theello\t1772464826418\n30024\t30009\toutgoing\t19515802188\tNULL\theello\t1772464826237\n30023\t30009\toutgoing\t19515802188\tNULL\t你好\t1772464822262\n30022\t30009\toutgoing\t19515802188\t苛\t苛女士，在干什么\t1772464396099\n30021\t30009\toutgoing\t19845233828\t苛\t｛姓名｝美女\t1772464311047\n30020\t30009\toutgoing\t13855280941\tNULL\t3\t1772464019654\n30019\t30009\toutgoing\t13855280941\tNULL\tmeinv\t1772463982866\n",
+  "stderr": "",
+  "execution_time_ms": 1886
+}

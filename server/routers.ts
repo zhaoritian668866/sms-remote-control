@@ -61,6 +61,7 @@ import {
   getBulkTasksByUserId,
   getRunningTaskByDeviceId,
   updateBulkTask,
+  normalizePhone,
 } from "./db";
 import { sendSmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
 
@@ -313,16 +314,18 @@ export const appRouter = router({
           throw new Error("设备不存在");
         }
 
+        const phone = normalizePhone(input.phoneNumber);
+
         const msg = await createMessage({
           deviceId: input.deviceId,
           direction: "outgoing",
-          phoneNumber: input.phoneNumber,
+          phoneNumber: phone,
           body: input.body,
           status: "pending",
           smsTimestamp: Date.now(),
         });
 
-        const result = await sendSmsToDevice(device.deviceId, input.phoneNumber, input.body);
+        const result = await sendSmsToDevice(device.deviceId, phone, input.body);
 
         const newStatus = result.success ? "sent" : "failed";
         await updateMessageStatus(msg.id, newStatus);

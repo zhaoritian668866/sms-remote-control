@@ -1,0 +1,40 @@
+{
+  "query": "SELECT DISTINCT phoneNumber, contactName, direction, COUNT(*) as cnt FROM messages GROUP BY phoneNumber, contactName, direction ORDER BY phoneNumber;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user r4xdFagEgpfWtwT.root --database 4rTHqCojuh9Vnb7GsHmjrf --execute SELECT DISTINCT phoneNumber, contactName, direction, COUNT(*) as cnt FROM messages GROUP BY phoneNumber, contactName, direction ORDER BY phoneNumber;",
+  "rows": [
+    {
+      "phoneNumber": "+855962323632",
+      "contactName": "NULL",
+      "direction": "outgoing",
+      "cnt": "1"
+    },
+    {
+      "phoneNumber": "13855280941",
+      "contactName": "NULL",
+      "direction": "outgoing",
+      "cnt": "2"
+    },
+    {
+      "phoneNumber": "19515802188",
+      "contactName": "苛",
+      "direction": "outgoing",
+      "cnt": "1"
+    },
+    {
+      "phoneNumber": "19515802188",
+      "contactName": "NULL",
+      "direction": "outgoing",
+      "cnt": "3"
+    },
+    {
+      "phoneNumber": "19845233828",
+      "contactName": "苛",
+      "direction": "outgoing",
+      "cnt": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "phoneNumber\tcontactName\tdirection\tcnt\n+855962323632\tNULL\toutgoing\t1\n13855280941\tNULL\toutgoing\t2\n19515802188\t苛\toutgoing\t1\n19515802188\tNULL\toutgoing\t3\n19845233828\t苛\toutgoing\t1\n",
+  "stderr": "",
+  "execution_time_ms": 1669
+}
