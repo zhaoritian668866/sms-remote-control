@@ -165,10 +165,10 @@ export default function Chat() {
     });
   }, [deviceId]);
 
-  // 获取所有联系人号码（去重，带最后消息时间和未读数）
+  // 获取所有联系人号码（去重，带最后消息时间、未读数、是否回复过）
   const contacts = useMemo(() => {
     if (!messageList) return [];
-    const contactMap = new Map<string, { number: string; lastMsg: string; lastTime: number; unread: number; name?: string }>();
+    const contactMap = new Map<string, { number: string; lastMsg: string; lastTime: number; unread: number; name?: string; hasReplied: boolean }>();
     // 按时间正序遍历，最后的会覆盖
     const sorted = [...messageList].sort((a, b) => a.smsTimestamp - b.smsTimestamp);
     for (const m of sorted) {
@@ -176,38 +176,53 @@ export default function Chat() {
       const lastReadTs = readTimestamps[m.phoneNumber] || 0;
       // 只计算收到的消息的未读数（发出的不算未读）
       const isUnread = m.direction === "incoming" && m.smsTimestamp > lastReadTs;
+      // 只要有一条 incoming 消息就标记为已回复
+      const hasReplied = (existing?.hasReplied || false) || m.direction === "incoming";
       contactMap.set(m.phoneNumber, {
         number: m.phoneNumber,
         lastMsg: m.body.length > 30 ? m.body.slice(0, 30) + "..." : m.body,
         lastTime: m.smsTimestamp,
         unread: (existing?.unread || 0) + (isUnread ? 1 : 0),
         name: m.contactName || existing?.name,
+        hasReplied,
       });
     }
     // 排序逻辑：置顶 > 未读 > 最后消息时间
-    return Array.from(contactMap.values()).sort((a, b) => {
+    type ContactItem = { number: string; lastMsg: string; lastTime: number; unread: number; name?: string; hasReplied: boolean };
+    const sortFn = (a: ContactItem, b: ContactItem) => {
       const aPinned = pinnedSet.has(a.number);
       const bPinned = pinnedSet.has(b.number);
-      // 置顶的排最前面
       if (aPinned && !bPinned) return -1;
       if (!aPinned && bPinned) return 1;
-      // 同为置顶或同为非置顶时，有未读的排前面
       if (a.unread > 0 && b.unread === 0) return -1;
       if (a.unread === 0 && b.unread > 0) return 1;
-      // 同级别按时间倒序
       return b.lastTime - a.lastTime;
-    });
+    };
+    return Array.from(contactMap.values()).sort(sortFn);
   }, [messageList, readTimestamps, pinnedSet]);
 
-  // 搜索过滤联系人
+  // 分组：已回复 / 未回复
+  const repliedContacts = useMemo(() => {
+    return contacts.filter(c => c.hasReplied);
+  }, [contacts]);
+
+  const unrepliedContacts = useMemo(() => {
+    return contacts.filter(c => !c.hasReplied);
+  }, [contacts]);
+
+  // 当前激活的分组 tab
+  const [activeTab, setActiveTab] = useState<"replied" | "unreplied">("unreplied");
+
+  // 搜索过滤联系人（基于当前分组）
   const filteredContacts = useMemo(() => {
-    if (!contactSearch.trim()) return contacts;
+    const base = activeTab === "replied" ? repliedContacts : unrepliedContacts;
+    if (!contactSearch.trim()) return base;
     const q = contactSearch.toLowerCase();
-    return contacts.filter(c =>
+    return base.filter(c =>
       c.number.toLowerCase().includes(q) ||
       (c.name && c.name.toLowerCase().includes(q))
     );
-  }, [contacts, contactSearch]);
+  }, [activeTab, repliedContacts, unrepliedContacts, contactSearch]);
 
   // 当消息列表加载后，自动选中最近的联系人
   useEffect(() => {
@@ -400,6 +415,42 @@ export default function Chat() {
                 </button>
               )}
             </div>
+          </div>
+
+          {/* 分组 Tab */}
+          <div className="shrink-0 flex border-b border-foreground/10">
+            <button
+              onClick={() => setActiveTab("unreplied")}
+              className={`flex-1 py-2 text-xs font-serif text-center transition-colors relative ${
+                activeTab === "unreplied"
+                  ? "text-foreground"
+                  : "text-muted-foreground/60 hover:text-muted-foreground"
+              }`}
+            >
+              未回复
+              {unrepliedContacts.length > 0 && (
+                <span className="ml-1 text-[10px] text-muted-foreground/50">({unrepliedContacts.length})</span>
+              )}
+              {activeTab === "unreplied" && (
+                <span className="absolute bottom-0 left-1/4 right-1/4 h-[2px] bg-foreground/60" />
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab("replied")}
+              className={`flex-1 py-2 text-xs font-serif text-center transition-colors relative ${
+                activeTab === "replied"
+                  ? "text-foreground"
+                  : "text-muted-foreground/60 hover:text-muted-foreground"
+              }`}
+            >
+              已回复
+              {repliedContacts.length > 0 && (
+                <span className="ml-1 text-[10px] text-muted-foreground/50">({repliedContacts.length})</span>
+              )}
+              {activeTab === "replied" && (
+                <span className="absolute bottom-0 left-1/4 right-1/4 h-[2px] bg-foreground/60" />
+              )}
+            </button>
           </div>
 
           {/* 新建联系人按钮 */}

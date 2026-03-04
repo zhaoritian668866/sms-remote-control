@@ -819,12 +819,6 @@ export async function pinContact(deviceId: number, phoneNumber: string) {
     .where(and(eq(pinnedContacts.deviceId, deviceId), eq(pinnedContacts.phoneNumber, phoneNumber)))
     .limit(1);
   if (existing.length > 0) return existing[0];
-  // Check pin limit (max 10)
-  const currentCount = await db.select({ count: sql<number>`count(*)` }).from(pinnedContacts)
-    .where(eq(pinnedContacts.deviceId, deviceId));
-  if ((currentCount[0]?.count ?? 0) >= 10) {
-    throw new Error("置顶联系人已达上限（最多10个）");
-  }
   await db.insert(pinnedContacts).values({ deviceId, phoneNumber });
   const result = await db.select().from(pinnedContacts)
     .where(and(eq(pinnedContacts.deviceId, deviceId), eq(pinnedContacts.phoneNumber, phoneNumber)))
