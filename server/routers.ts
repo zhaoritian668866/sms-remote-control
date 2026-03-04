@@ -65,6 +65,7 @@ import {
   getPinnedContacts,
   pinContact,
   unpinContact,
+  getDeviceStats,
 } from "./db";
 import { sendSmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
 
@@ -984,6 +985,21 @@ export const appRouter = router({
         const phone = normalizePhone(input.phoneNumber);
         await unpinContact(input.deviceId, phone);
         return { success: true };
+      }),
+  }),
+
+  // ─── Statistics ───
+  stats: router({
+    devices: protectedProcedure
+      .input(z.object({
+        startTime: z.number().optional(),
+        endTime: z.number().optional(),
+      }))
+      .query(async ({ ctx, input }) => {
+        return getDeviceStats(ctx.user.id, {
+          startTime: input.startTime,
+          endTime: input.endTime,
+        });
       }),
   }),
 

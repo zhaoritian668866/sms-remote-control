@@ -832,3 +832,74 @@ export async function unpinContact(deviceId: number, phoneNumber: string) {
   await db.delete(pinnedContacts)
     .where(and(eq(pinnedContacts.deviceId, deviceId), eq(pinnedContacts.phoneNumber, phoneNumber)));
 }
+
+// ─── Statistics: Per-device send/reply stats ───
+
+/**
+ * Get statistics per device for a user within a date range.
+ * For each device, counts:
+ * - totalSent: number of outgoing messages
+ * - singleReply: contacts who replied exactly once (only 1 incoming message)
+ * - multiReply: contacts who replied more than once (2+ incoming messages)
+ */
+export async function getDeviceStats(userId: number, opts?: { startTime?: number; endTime?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Get all devices for this user
+  const userDevices = await db.select({ id: devices.id, name: devices.name, deviceId: devices.deviceId })
+    .from(devices).where(eq(devices.userId, userId));
+
+  if (userDevices.length === 0) return [];
+
+  const results = [];
+
+  for (const device of userDevices) {
+    // Build conditions
+    const sentConditions: any[] = [eq(messages.deviceId, device.id), eq(messages.direction, "outgoing")];
+    const incomingConditions: any[] = [eq(messages.deviceId, device.id), eq(messages.direction, "incoming")];
+
+    if (opts?.startTime) {
+      sentConditions.push(gte(messages.smsTimestamp, opts.startTime));
+      incomingConditions.push(gte(messages.smsTimestamp, opts.startTime));
+    }
+    if (opts?.endTime) {
+      sentConditions.push(lte(messages.smsTimestamp, opts.endTime));
+      incomingConditions.push(lte(messages.smsTimestamp, opts.endTime));
+    }
+
+    // Count total sent messages
+    const [sentResult] = await db.select({ count: sql<number>`count(*)` })
+      .from(messages).where(and(...sentConditions));
+    const totalSent = sentResult?.count ?? 0;
+
+    // Count incoming messages grouped by phoneNumber
+    const replyGroups = await db.select({
+      phoneNumber: messages.phoneNumber,
+      replyCount: sql<number>`count(*)`,
+    })
+      .from(messages)
+      .where(and(...incomingConditions))
+      .groupBy(messages.phoneNumber);
+
+    let singleReply = 0;
+    let multiReply = 0;
+    for (const rg of replyGroups) {
+      if (rg.replyCount === 1) {
+        singleReply++;
+      } else if (rg.replyCount > 1) {
+        multiReply++;
+      }
+    }
+
+    results.push({
+      deviceId: device.id,
+      deviceName: device.name,
+      totalSent,
+      singleReply,
+      multiReply,
+    });
+  }
+
+  return results;
+}

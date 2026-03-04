@@ -19,6 +19,7 @@ import Templates from "./pages/Templates";
 import BulkSend from "./pages/BulkSend";
 import Auditor from "./pages/Auditor";
 import Landing from "./pages/Landing";
+import Stats from "./pages/Stats";
 
 function Router() {
   return (
@@ -36,6 +37,7 @@ function Router() {
       <Route path={"/templates"} component={Templates} />
       <Route path={"/bulk-send"} component={BulkSend} />
       <Route path={"/auditor"} component={Auditor} />
+      <Route path={"/stats"} component={Stats} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
