@@ -242,13 +242,18 @@ describe("device.quota", () => {
   });
 });
 
-// ─── Pairing Quota Exceeded Tests ───
+// ─── Pairing Token Generation Tests ───
 
-describe("pairing.generate quota check", () => {
-  it("throws DEVICE_QUOTA_EXCEEDED when at limit", async () => {
+describe("pairing.generate", () => {
+  it("always allows generating pairing token (quota check moved to wsManager)", async () => {
+    // Quota check now happens during actual pairing in wsManager, not at token generation
+    // So pairing.generate should always succeed for authenticated users
     const user = createBaseUser({ maxDevices: 0 });
     const caller = appRouter.createCaller(createCtx(user));
-    await expect(caller.pairing.generate()).rejects.toThrow(/DEVICE_QUOTA_EXCEEDED/);
+    // Should not throw - token generation is always allowed
+    const result = await caller.pairing.generate();
+    expect(result).toBeDefined();
+    expect(result.token).toBeDefined();
   });
 });
 

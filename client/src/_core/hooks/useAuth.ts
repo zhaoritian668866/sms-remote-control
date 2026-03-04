@@ -1,7 +1,7 @@
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 type UseAuthOptions = {
   redirectOnUnauthenticated?: boolean;
@@ -15,8 +15,12 @@ export function useAuth(options?: UseAuthOptions) {
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
     retry: false,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchInterval: 30000, // Check every 30s if session is still valid
   });
+
+  // Track if user was previously logged in to detect being kicked
+  const wasLoggedIn = useRef(false);
 
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
@@ -59,6 +63,19 @@ export function useAuth(options?: UseAuthOptions) {
     logoutMutation.error,
     logoutMutation.isPending,
   ]);
+
+  // Detect session invalidation (kicked by another login)
+  useEffect(() => {
+    if (state.user) {
+      wasLoggedIn.current = true;
+    } else if (wasLoggedIn.current && !meQuery.isLoading && !logoutMutation.isPending) {
+      // User was logged in but now session is invalid = kicked
+      wasLoggedIn.current = false;
+      alert("\u60a8\u7684\u8d26\u53f7\u5df2\u5728\u5176\u4ed6\u8bbe\u5907\u767b\u5f55\uff0c\u5f53\u524d\u4f1a\u8bdd\u5df2\u5931\u6548"); // 您的账号已在其他设备登录，当前会话已失效
+      window.location.href = "/login";
+      return;
+    }
+  }, [state.user, meQuery.isLoading, logoutMutation.isPending]);
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;

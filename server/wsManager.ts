@@ -10,6 +10,7 @@ import {
   createMessage,
   getDeviceByDeviceId,
   getDevicesByUserId,
+  getUserById,
   updateDevice,
 } from "./db";
 import { notifyOwner } from "./_core/notification";
@@ -62,30 +63,15 @@ export function initWebSocket(server: HttpServer) {
           return;
         }
 
-        // Check if user already has devices - reuse existing device to preserve history
+        // Check user's device quota and existing devices
         const existingDevices = await getDevicesByUserId(tokenRecord.userId);
+        const user = await getUserById(tokenRecord.userId);
+        const maxDevices = user?.maxDevices ?? 1;
         let device;
         let deviceId: string;
 
-        if (existingDevices.length > 0) {
-          // Reuse the first existing device - update its deviceId and info, keep messages/contacts
-          const existing = existingDevices[0];
-          deviceId = `dev_${nanoid(16)}`;
-          await updateDevice(existing.id, {
-            deviceId,
-            name: data.deviceInfo?.phoneModel || existing.name,
-            phoneModel: data.deviceInfo?.phoneModel || existing.phoneModel,
-            androidVersion: data.deviceInfo?.androidVersion || existing.androidVersion,
-            phoneNumber: data.deviceInfo?.phoneNumber || existing.phoneNumber,
-            isOnline: true,
-            batteryLevel: data.deviceInfo?.batteryLevel || existing.batteryLevel,
-            signalStrength: data.deviceInfo?.signalStrength || existing.signalStrength,
-            lastSeen: new Date(),
-          });
-          device = { ...existing, deviceId, isOnline: true };
-          console.log(`[WS] Re-paired existing device id=${existing.id}, new deviceId=${deviceId}`);
-        } else {
-          // First time pairing - create new device
+        if (existingDevices.length < maxDevices) {
+          // User has quota remaining - create a new device (support multiple messengers)
           deviceId = `dev_${nanoid(16)}`;
           device = await createDevice({
             userId: tokenRecord.userId,
@@ -99,7 +85,34 @@ export function initWebSocket(server: HttpServer) {
             signalStrength: data.deviceInfo?.signalStrength || null,
             lastSeen: new Date(),
           });
-          console.log(`[WS] Created new device id=${device.id}, deviceId=${deviceId}`);
+          console.log(`[WS] Created new device id=${device.id}, deviceId=${deviceId} (${existingDevices.length + 1}/${maxDevices})`);
+        } else if (existingDevices.length > 0) {
+          // Device quota full - reuse the oldest device to preserve history
+          // Sort by lastSeen ascending, reuse the one that's been offline longest
+          const sorted = [...existingDevices].sort((a, b) => {
+            const aTime = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
+            const bTime = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
+            return aTime - bTime;
+          });
+          const existing = sorted[0];
+          deviceId = `dev_${nanoid(16)}`;
+          await updateDevice(existing.id, {
+            deviceId,
+            name: data.deviceInfo?.phoneModel || existing.name,
+            phoneModel: data.deviceInfo?.phoneModel || existing.phoneModel,
+            androidVersion: data.deviceInfo?.androidVersion || existing.androidVersion,
+            phoneNumber: data.deviceInfo?.phoneNumber || existing.phoneNumber,
+            isOnline: true,
+            batteryLevel: data.deviceInfo?.batteryLevel || existing.batteryLevel,
+            signalStrength: data.deviceInfo?.signalStrength || existing.signalStrength,
+            lastSeen: new Date(),
+          });
+          device = { ...existing, deviceId, isOnline: true };
+          console.log(`[WS] Quota full (${maxDevices}/${maxDevices}), re-paired oldest device id=${existing.id}, new deviceId=${deviceId}`);
+        } else {
+          // Edge case: maxDevices is 0, shouldn't happen but handle gracefully
+          socket.emit("pair_result", { success: false, error: "No device quota available" });
+          return;
         }
 
         await updatePairingToken(tokenRecord.id, { status: "paired", deviceId: device.id });

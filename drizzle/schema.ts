@@ -44,6 +44,8 @@ export const users = mysqlTable("users", {
   maxDevices: int("maxDevices").default(1).notNull(),
   /** Whether the account is enabled */
   isActive: boolean("isActive").default(true).notNull(),
+  /** Session version - incremented on each login, used to invalidate old sessions */
+  sessionVersion: int("sessionVersion").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

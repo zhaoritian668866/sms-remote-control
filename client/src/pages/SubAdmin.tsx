@@ -108,8 +108,8 @@ function SubStatsPanel() {
 
   const items = [
     { label: "一线人员", value: stats?.totalUsers ?? 0, icon: Users },
-    { label: "设备总数", value: stats?.totalDevices ?? 0, icon: Smartphone },
-    { label: "在线设备", value: stats?.onlineDevices ?? 0, icon: Wifi },
+    { label: "已绑信使", value: stats?.totalDevices ?? 0, icon: Smartphone },
+    { label: "在线信使", value: stats?.onlineDevices ?? 0, icon: Wifi },
     { label: "短信总量", value: stats?.totalMessages ?? 0, icon: MessageSquare },
   ];
 
@@ -132,7 +132,7 @@ function SubStatsPanel() {
               <code className="text-foreground/70 bg-background/60 px-1.5 py-0.5 border border-foreground/10 text-xs">{group.groupCode}</code>
             </div>
             <div>
-              <span className="text-muted-foreground/50">设备配额：</span>
+              <span className="text-muted-foreground/50">已分配配额：</span>
               <span className="text-foreground/70">{group.allocatedDevices}/{group.maxDevices} 台</span>
             </div>
             <div>
@@ -184,7 +184,7 @@ function SubUsersPanel() {
     <div className="p-6">
       {group && (
         <div className="text-xs font-body text-muted-foreground/40 mb-3">
-          组配额：{group.allocatedDevices}/{group.maxDevices} 台已分配 · 剩余可分配 {group.maxDevices - group.allocatedDevices} 台
+          已分配配额：{group.allocatedDevices}/{group.maxDevices} 台 · 剩余可分配 {group.maxDevices - group.allocatedDevices} 台
         </div>
       )}
       <div className="relative mb-4">

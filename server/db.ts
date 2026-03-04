@@ -128,6 +128,15 @@ export async function updateUserLastSignedIn(id: number) {
   await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, id));
 }
 
+/** Increment session version to invalidate all existing sessions for this user */
+export async function incrementSessionVersion(id: number): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set({ sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, id));
+  const result = await db.select({ sessionVersion: users.sessionVersion }).from(users).where(eq(users.id, id)).limit(1);
+  return result[0]?.sessionVersion ?? 1;
+}
+
 // ─── Group Queries ───
 
 export async function createGroup(data: InsertGroup) {
@@ -258,13 +267,19 @@ export async function getSystemStats() {
 
 export async function getGroupStats(groupId: number) {
   const db = await getDb();
-  if (!db) return { totalUsers: 0, totalDevices: 0, totalMessages: 0, onlineDevices: 0 };
+  if (!db) return { totalUsers: 0, totalDevices: 0, totalMessages: 0, onlineDevices: 0, allocatedQuota: 0 };
 
-  const groupUsers = await db.select({ id: users.id }).from(users).where(eq(users.groupId, groupId));
+  // Get all frontline users in this group (exclude admin)
+  const groupUsers = await db.select({ id: users.id, role: users.role, maxDevices: users.maxDevices })
+    .from(users).where(eq(users.groupId, groupId));
+  const frontlineUsers = groupUsers.filter(u => u.role === "user");
   const userIds = groupUsers.map(u => u.id);
 
+  // Calculate allocated quota: sum of maxDevices for frontline users only
+  const allocatedQuota = frontlineUsers.reduce((sum, u) => sum + (u.maxDevices ?? 0), 0);
+
   if (userIds.length === 0) {
-    return { totalUsers: 0, totalDevices: 0, totalMessages: 0, onlineDevices: 0 };
+    return { totalUsers: 0, totalDevices: 0, totalMessages: 0, onlineDevices: 0, allocatedQuota: 0 };
   }
 
   const userIdSql = sql`${devices.userId} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`;
@@ -283,10 +298,11 @@ export async function getGroupStats(groupId: number) {
   }
 
   return {
-    totalUsers: groupUsers.length,
+    totalUsers: frontlineUsers.length,
     totalDevices: deviceCount?.count ?? 0,
     totalMessages: msgCount,
     onlineDevices: onlineCount?.count ?? 0,
+    allocatedQuota,
   };
 }
 
@@ -632,10 +648,11 @@ export async function getAllConfigs() {
   return db.select().from(systemConfig).orderBy(asc(systemConfig.configKey));
 }
 
-/** Get sum of maxDevices for all users in a group (allocated quota) */
+/** Get sum of maxDevices for frontline users only in a group (allocated quota) */
 export async function getGroupAllocatedDevices(groupId: number) {
   const db = await getDb();
   if (!db) return 0;
+  // Only count frontline users (role='user'), exclude admin accounts
   const result = await db.select({ total: sql<number>`COALESCE(SUM(${users.maxDevices}), 0)` })
     .from(users)
     .where(and(eq(users.groupId, groupId), eq(users.role, "user")));

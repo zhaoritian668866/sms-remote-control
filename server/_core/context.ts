@@ -30,7 +30,15 @@ async function authenticateFromCookie(req: CreateExpressContextOptions["req"]): 
     if (!openId) return null;
 
     const user = await getUserByOpenId(openId);
-    return user ?? null;
+    if (!user) return null;
+
+    // Check session version - if token's sv doesn't match user's sessionVersion, session is invalidated
+    const tokenSv = payload.sv as number | undefined;
+    if (tokenSv !== undefined && tokenSv !== user.sessionVersion) {
+      return null; // Session was invalidated by a newer login
+    }
+
+    return user;
   } catch (error) {
     return null;
   }
