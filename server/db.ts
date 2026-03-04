@@ -903,3 +903,90 @@ export async function getDeviceStats(userId: number, opts?: { startTime?: number
 
   return results;
 }
+
+/**
+ * Get statistics for ALL devices across all users (for superadmin/auditor).
+ * Returns same structure as getDeviceStats but includes userName and grouped by user.
+ */
+export async function getAllDeviceStats(opts?: { startTime?: number; endTime?: number; groupId?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Get all devices, joined with user info
+  let allDevices;
+  if (opts?.groupId) {
+    // Filter by group: get users in this group first
+    const groupUsers = await db.select({ id: users.id }).from(users).where(eq(users.groupId, opts.groupId));
+    if (groupUsers.length === 0) return [];
+    const userIds = groupUsers.map(u => u.id);
+    allDevices = await db.select({
+      id: devices.id,
+      name: devices.name,
+      deviceId: devices.deviceId,
+      userId: devices.userId,
+    }).from(devices).where(sql`${devices.userId} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`);
+  } else {
+    allDevices = await db.select({
+      id: devices.id,
+      name: devices.name,
+      deviceId: devices.deviceId,
+      userId: devices.userId,
+    }).from(devices);
+  }
+
+  if (allDevices.length === 0) return [];
+
+  // Get user names in batch
+  const userIds = Array.from(new Set(allDevices.map(d => d.userId)));
+  const userList = await db.select({ id: users.id, name: users.name, username: users.username })
+    .from(users)
+    .where(sql`${users.id} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`);
+  const userMap = new Map(userList.map(u => [u.id, u.name || u.username || `用户${u.id}`]));
+
+  const results = [];
+
+  for (const device of allDevices) {
+    const sentConditions: any[] = [eq(messages.deviceId, device.id), eq(messages.direction, "outgoing")];
+    const incomingConditions: any[] = [eq(messages.deviceId, device.id), eq(messages.direction, "incoming")];
+
+    if (opts?.startTime) {
+      sentConditions.push(gte(messages.smsTimestamp, opts.startTime));
+      incomingConditions.push(gte(messages.smsTimestamp, opts.startTime));
+    }
+    if (opts?.endTime) {
+      sentConditions.push(lte(messages.smsTimestamp, opts.endTime));
+      incomingConditions.push(lte(messages.smsTimestamp, opts.endTime));
+    }
+
+    const [sentResult] = await db.select({ count: sql<number>`count(*)` })
+      .from(messages).where(and(...sentConditions));
+    const totalSent = sentResult?.count ?? 0;
+
+    const replyGroups = await db.select({
+      phoneNumber: messages.phoneNumber,
+      replyCount: sql<number>`count(*)`,
+    })
+      .from(messages)
+      .where(and(...incomingConditions))
+      .groupBy(messages.phoneNumber);
+
+    let singleReply = 0;
+    let multiReply = 0;
+    for (const rg of replyGroups) {
+      if (rg.replyCount === 1) singleReply++;
+      else if (rg.replyCount > 1) multiReply++;
+    }
+
+    results.push({
+      deviceId: device.id,
+      deviceName: device.name,
+      userName: userMap.get(device.userId) || `用户${device.userId}`,
+      userId: device.userId,
+      totalSent,
+      singleReply,
+      multiReply,
+    });
+  }
+
+  return results;
+}

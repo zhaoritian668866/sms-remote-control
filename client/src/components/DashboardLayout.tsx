@@ -121,6 +121,7 @@ function DashboardLayoutContent({
 
   const menuItems = isAuditor ? [
     { icon: Eye, label: "审计台", path: "/auditor" },
+    { icon: BarChart3, label: "统计", path: "/stats" },
   ] : [
     { icon: LayoutDashboard, label: "总堂", path: "/" },
     { icon: Smartphone, label: "信使", path: "/devices", showUnread: true },

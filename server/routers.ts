@@ -66,6 +66,7 @@ import {
   pinContact,
   unpinContact,
   getDeviceStats,
+  getAllDeviceStats,
 } from "./db";
 import { sendSmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
 
@@ -999,6 +1000,24 @@ export const appRouter = router({
         return getDeviceStats(ctx.user.id, {
           startTime: input.startTime,
           endTime: input.endTime,
+        });
+      }),
+
+    // Global stats for superadmin and auditor
+    all: protectedProcedure
+      .input(z.object({
+        startTime: z.number().optional(),
+        endTime: z.number().optional(),
+        groupId: z.number().optional(),
+      }))
+      .query(async ({ ctx, input }) => {
+        if (ctx.user.role !== "superadmin" && ctx.user.role !== "auditor") {
+          throw new Error("无权访问全局统计");
+        }
+        return getAllDeviceStats({
+          startTime: input.startTime,
+          endTime: input.endTime,
+          groupId: input.groupId,
         });
       }),
   }),
