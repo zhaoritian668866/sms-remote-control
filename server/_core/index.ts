@@ -2,14 +2,21 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import path from "path";
+import fs from "fs";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { initWebSocket } from "../wsManager";
-import { storagePut } from "../storage";
 import { nanoid } from "nanoid";
 import multer from "multer";
+
+// Local uploads directory
+const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -30,12 +37,29 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
+/** Save file to local disk and return the public URL path */
+export function saveFileLocally(buffer: Buffer, mimeType: string, subDir: string = ""): string {
+  const ext = mimeType === "image/png" ? "png" : mimeType === "image/gif" ? "gif" : "jpg";
+  const fileName = `${nanoid(16)}.${ext}`;
+  const dirPath = subDir ? path.join(UPLOADS_DIR, subDir) : UPLOADS_DIR;
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+  const filePath = path.join(dirPath, fileName);
+  fs.writeFileSync(filePath, buffer);
+  // Return URL path (will be served by /uploads static route)
+  return subDir ? `/uploads/${subDir}/${fileName}` : `/uploads/${fileName}`;
+}
+
 async function startServer() {
   const app = express();
   const server = createServer(app);
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // Serve uploaded files as static assets
+  app.use("/uploads", express.static(UPLOADS_DIR));
 
   // MMS image upload endpoint (for Android client)
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -44,17 +68,17 @@ async function startServer() {
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
       }
-      const ext = req.file.mimetype === "image/png" ? "png" : req.file.mimetype === "image/gif" ? "gif" : "jpg";
-      const fileKey = `mms/received/${nanoid(16)}.${ext}`;
-      const { url } = await storagePut(fileKey, req.file.buffer, req.file.mimetype);
-      res.json({ url });
+      const urlPath = saveFileLocally(req.file.buffer, req.file.mimetype, "mms");
+      // Return full URL using request origin
+      const origin = `${req.protocol}://${req.get("host")}`;
+      res.json({ url: `${origin}${urlPath}` });
     } catch (e: any) {
       console.error("MMS image upload error:", e);
       res.status(500).json({ error: e.message || "Upload failed" });
     }
   });
 
-  // APK download endpoint (redirect to S3)
+  // APK download endpoint (redirect to CDN)
   const APK_CDN_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663393087442/4rTHqCojuh9Vnb7GsHmjrf/sms-remote-v3.0_7b110450.zip";
   app.get("/api/download/apk", (_req: any, res: any) => {
     res.redirect(APK_CDN_URL);

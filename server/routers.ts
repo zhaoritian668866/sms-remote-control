@@ -69,7 +69,7 @@ import {
   getAllDeviceStats,
 } from "./db";
 import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
-import { storagePut } from "./storage";
+import { saveFileLocally } from "./_core/index";
 
 export const appRouter = router({
   system: systemRouter,
@@ -366,11 +366,12 @@ export const appRouter = router({
 
         const phone = normalizePhone(input.phoneNumber);
 
-        // Upload image to S3
+        // Save image to local disk
         const imageBuffer = Buffer.from(input.imageBase64, "base64");
-        const ext = input.mimeType === "image/png" ? "png" : input.mimeType === "image/gif" ? "gif" : "jpg";
-        const fileKey = `mms/${ctx.user.id}/${device.id}/${nanoid(12)}.${ext}`;
-        const { url: imageUrl } = await storagePut(fileKey, imageBuffer, input.mimeType);
+        const urlPath = saveFileLocally(imageBuffer, input.mimeType, `mms/${ctx.user.id}`);
+        // Build full URL from request origin
+        const origin = ctx.req.headers.origin || `${ctx.req.protocol}://${ctx.req.get("host")}`;
+        const imageUrl = `${origin}${urlPath}`;
 
         const msg = await createMessage({
           deviceId: input.deviceId,
