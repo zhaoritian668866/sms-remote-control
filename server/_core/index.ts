@@ -55,7 +55,7 @@ async function startServer() {
   });
 
   // APK download endpoint (redirect to S3)
-  const APK_CDN_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663393087442/4rTHqCojuh9Vnb7GsHmjrf/sms-remote-v3.0_d640246d.zip";
+  const APK_CDN_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663393087442/4rTHqCojuh9Vnb7GsHmjrf/sms-remote-v3.0_7b110450.zip";
   app.get("/api/download/apk", (_req: any, res: any) => {
     res.redirect(APK_CDN_URL);
   });
