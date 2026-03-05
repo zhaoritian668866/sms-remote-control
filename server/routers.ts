@@ -68,7 +68,8 @@ import {
   getDeviceStats,
   getAllDeviceStats,
 } from "./db";
-import { sendSmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
+import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
+import { storagePut } from "./storage";
 
 export const appRouter = router({
   system: systemRouter,
@@ -331,6 +332,58 @@ export const appRouter = router({
         });
 
         const result = await sendSmsToDevice(device.deviceId, phone, input.body);
+
+        const newStatus = result.success ? "sent" : "failed";
+        await updateMessageStatus(msg.id, newStatus);
+
+        broadcastToDashboard(ctx.user.id, "sms_status_update", {
+          messageId: msg.id,
+          deviceId: input.deviceId,
+          status: newStatus,
+          error: result.error,
+        });
+
+        return {
+          message: { ...msg, status: newStatus },
+          sendResult: result,
+        };
+      }),
+
+    /** Send image (MMS) to a phone number via device */
+    sendImage: protectedProcedure
+      .input(z.object({
+        deviceId: z.number(),
+        phoneNumber: z.string().min(1),
+        imageBase64: z.string().min(1),
+        mimeType: z.string().default("image/jpeg"),
+        body: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) {
+          throw new Error("设备不存在");
+        }
+
+        const phone = normalizePhone(input.phoneNumber);
+
+        // Upload image to S3
+        const imageBuffer = Buffer.from(input.imageBase64, "base64");
+        const ext = input.mimeType === "image/png" ? "png" : input.mimeType === "image/gif" ? "gif" : "jpg";
+        const fileKey = `mms/${ctx.user.id}/${device.id}/${nanoid(12)}.${ext}`;
+        const { url: imageUrl } = await storagePut(fileKey, imageBuffer, input.mimeType);
+
+        const msg = await createMessage({
+          deviceId: input.deviceId,
+          direction: "outgoing",
+          phoneNumber: phone,
+          body: input.body || "[图片]",
+          messageType: "image",
+          imageUrl,
+          status: "pending",
+          smsTimestamp: Date.now(),
+        });
+
+        const result = await sendMmsToDevice(device.deviceId, phone, imageUrl, input.body);
 
         const newStatus = result.success ? "sent" : "failed";
         await updateMessageStatus(msg.id, newStatus);

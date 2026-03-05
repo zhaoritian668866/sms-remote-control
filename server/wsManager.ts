@@ -162,8 +162,8 @@ export function initWebSocket(server: HttpServer) {
       }
     });
 
-    // Incoming SMS from device
-    socket.on("sms_received", async (data: { phoneNumber: string; contactName?: string; body: string; timestamp: number }) => {
+    // Incoming SMS from device (supports text and image/MMS)
+    socket.on("sms_received", async (data: { phoneNumber: string; contactName?: string; body: string; timestamp: number; messageType?: string; imageUrl?: string }) => {
       const deviceId = socket.data.deviceId;
       if (!deviceId) return;
 
@@ -176,7 +176,9 @@ export function initWebSocket(server: HttpServer) {
           direction: "incoming",
           phoneNumber: data.phoneNumber,
           contactName: data.contactName || null,
-          body: data.body,
+          body: data.body || (data.messageType === "image" ? "[图片]" : ""),
+          messageType: (data.messageType as "text" | "image") || "text",
+          imageUrl: data.imageUrl || null,
           status: "received",
           smsTimestamp: data.timestamp,
         });
@@ -300,6 +302,32 @@ export async function sendSmsToDevice(deviceId: string, phoneNumber: string, bod
       requestId,
       phoneNumber,
       body,
+    });
+  });
+}
+
+// Send MMS (image) command to a device
+export async function sendMmsToDevice(deviceId: string, phoneNumber: string, imageUrl: string, body?: string): Promise<{ success: boolean; error?: string }> {
+  const socket = connectedDevices.get(deviceId);
+  if (!socket) {
+    return { success: false, error: "Device not connected" };
+  }
+
+  const requestId = nanoid(12);
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingSmsSends.delete(requestId);
+      resolve({ success: false, error: "MMS send timeout (60s)" });
+    }, 60000);
+
+    pendingSmsSends.set(requestId, { resolve, reject: () => {}, timer });
+
+    socket.emit("send_mms", {
+      requestId,
+      phoneNumber,
+      imageUrl,
+      body: body || "",
     });
   });
 }

@@ -71,6 +71,13 @@
       "when": 1772620220474,
       "tag": "0009_wise_corsair",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1772704280002,
+      "tag": "0010_legal_loners",
+      "breakpoints": true
     }
   ]
 }

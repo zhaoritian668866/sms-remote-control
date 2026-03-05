@@ -22,7 +22,8 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useUnreadCounts } from "@/hooks/useUnread";
-import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft, Crown, Building2, FileDown, FileText, Zap, Eye, BarChart3 } from "lucide-react";
+import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft, Crown, Building2, FileDown, FileText, Zap, Eye, BarChart3, Sun, Moon } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -32,6 +33,24 @@ const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 240;
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 400;
+
+function ThemeToggleButton() {
+  const { theme, toggleTheme, switchable } = useTheme();
+  if (!switchable || !toggleTheme) return null;
+  return (
+    <button
+      onClick={toggleTheme}
+      className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-foreground/5 transition-colors w-full text-left text-sm font-body text-muted-foreground hover:text-foreground mb-1"
+      title={theme === "dark" ? "切换为亮色主题" : "切换为暗色主题"}
+    >
+      {theme === "dark" ? (
+        <><Sun className="w-4 h-4" /><span className="group-data-[collapsible=icon]:hidden">切换亮色</span></>
+      ) : (
+        <><Moon className="w-4 h-4" /><span className="group-data-[collapsible=icon]:hidden">切换暗色</span></>
+      )}
+    </button>
+  );
+}
 
 export default function DashboardLayout({
   children,
@@ -231,6 +250,8 @@ function DashboardLayoutContent({
           </SidebarContent>
 
           <SidebarFooter className="p-3 border-t border-foreground/10">
+            {/* 主题切换按钮 */}
+            <ThemeToggleButton />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded px-1 py-1 hover:bg-foreground/5 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none">

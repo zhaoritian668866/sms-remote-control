@@ -103,6 +103,10 @@ export const messages = mysqlTable("messages", {
   phoneNumber: varchar("phoneNumber", { length: 32 }).notNull(),
   contactName: varchar("contactName", { length: 128 }),
   body: text("body").notNull(),
+  /** Message type: text (SMS) or image (MMS with image) */
+  messageType: mysqlEnum("messageType", ["text", "image"]).default("text").notNull(),
+  /** URL of the image stored in S3 (only for image messages) */
+  imageUrl: varchar("imageUrl", { length: 1024 }),
   status: mysqlEnum("status", ["pending", "sent", "delivered", "failed", "received"]).default("received").notNull(),
   smsTimestamp: bigint("smsTimestamp", { mode: "number" }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

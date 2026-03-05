@@ -7,7 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { useDashboardSocket } from "@/hooks/useSocket";
 import {
   ArrowLeft, Send, Loader2, Smartphone, Battery, Signal,
-  Phone, ChevronDown, Search, UserPlus, X, MessageSquare, Pin, PinOff
+  Phone, ChevronDown, Search, UserPlus, X, MessageSquare, Pin, PinOff, ImagePlus
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { toast } from "sonner";
@@ -29,6 +29,8 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   // 进入聊天页时清除该设备未读
   useEffect(() => {
@@ -107,6 +109,51 @@ export default function Chat() {
       toast.error("传书失败：" + err.message);
     },
   });
+
+  // 发送图片 (MMS)
+  const sendImageMutation = trpc.sms.sendImage.useMutation({
+    onSuccess: (data) => {
+      if (data.sendResult.success) {
+        toast.success("图片已发出");
+        refetchMessages();
+      } else {
+        toast.error("图片发送失败：" + (data.sendResult.error || "未知错误"));
+        refetchMessages();
+      }
+    },
+    onError: (err) => {
+      toast.error("图片发送失败：" + err.message);
+    },
+  });
+
+  // 处理图片选择
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!selectedContact.trim()) {
+      toast.error("请先选择联系人");
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      toast.error("图片大小不能超过 1MB（MMS 限制）");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(",")[1];
+      sendImageMutation.mutate({
+        deviceId,
+        phoneNumber: selectedContact.trim(),
+        imageBase64: base64,
+        mimeType: file.type || "image/jpeg",
+        body: messageBody.trim() || undefined,
+      });
+      setMessageBody("");
+    };
+    reader.readAsDataURL(file);
+    // Reset input
+    if (imageInputRef.current) imageInputRef.current.value = "";
+  };
 
   // WebSocket 实时消息
   const { on } = useDashboardSocket(user?.id);
@@ -677,7 +724,21 @@ export default function Chat() {
                               : "bubble-incoming text-foreground"
                           }`}
                         >
-                          {msg.body}
+                          {msg.messageType === "image" && msg.imageUrl ? (
+                            <div className="space-y-1">
+                              <img
+                                src={msg.imageUrl}
+                                alt="图片消息"
+                                className="max-w-[200px] max-h-[200px] rounded cursor-pointer hover:opacity-80 transition-opacity"
+                                onClick={() => setPreviewImage(msg.imageUrl)}
+                              />
+                              {msg.body && msg.body !== "[图片]" && (
+                                <p>{msg.body}</p>
+                              )}
+                            </div>
+                          ) : (
+                            msg.body
+                          )}
                         </div>
 
                         {/* 时间 + 状态 */}
@@ -744,6 +805,27 @@ export default function Chat() {
                 }}
               />
             </div>
+            {/* 图片发送按钮 */}
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageSelect}
+            />
+            <Button
+              onClick={() => imageInputRef.current?.click()}
+              disabled={sendImageMutation.isPending || !selectedContact.trim()}
+              variant="outline"
+              className="border-foreground/20 text-foreground/60 hover:text-foreground hover:bg-foreground/5 h-10 px-3 shrink-0"
+              title="发送图片（MMS）"
+            >
+              {sendImageMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ImagePlus className="w-4 h-4" />
+              )}
+            </Button>
             <Button
               onClick={handleSend}
               disabled={sendMutation.isPending || !messageBody.trim() || !selectedContact.trim()}
@@ -758,6 +840,27 @@ export default function Chat() {
           </div>
         </div>
       </div>
+      {/* 图片预览模态框 */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center cursor-pointer"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div className="relative max-w-[90vw] max-h-[90vh]">
+            <img
+              src={previewImage}
+              alt="图片预览"
+              className="max-w-full max-h-[90vh] object-contain rounded"
+            />
+            <button
+              onClick={() => setPreviewImage(null)}
+              className="absolute top-2 right-2 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center text-white hover:bg-black/70 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }
