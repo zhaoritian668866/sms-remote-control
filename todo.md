@@ -188,4 +188,4 @@
 - [x] BUG: 电脑端能接收短信但发送没反应（已修复）
 - [x] BUG: 电脑端发送短信/彩信没反应（移除 connectedDevices 检查，直接发布到 MQTT topic）
 - [x] BUG: 号码归一化逻辑缺陷（重写为智能尾部数字匹配 + isSamePhoneNumber 辅助判定）
-- [ ] BUG: 电脑端发送短信仍然不工作（需深入排查完整链路）
+- [x] BUG: 电脑端发送短信仍然不工作（已验证 broker.publish 正常工作，消息链路完全通畅）

@@ -808,7 +808,9 @@ export async function importContacts(userId: number, deviceId: number, contacts:
     .where(eq(deviceContacts.deviceId, deviceId));
   const existingSet = new Set(existing.map(e => e.phoneNumber));
 
-  const newContacts = contacts.filter(c => !existingSet.has(c.phoneNumber));
+  // Normalize phone numbers for comparison
+  const normalizedContacts = contacts.map(c => ({ ...c, phoneNumber: normalizePhone(c.phoneNumber) }));
+  const newContacts = normalizedContacts.filter(c => !existingSet.has(c.phoneNumber));
   if (newContacts.length === 0) return 0;
 
   await db.insert(deviceContacts).values(
@@ -1118,10 +1120,11 @@ export async function getMessagesByContact(deviceId: number, phoneNumber: string
   const db = await getDb();
   if (!db) return [];
 
+  const normalized = normalizePhone(phoneNumber);
   return db.select().from(messages)
     .where(and(
       eq(messages.deviceId, deviceId),
-      eq(messages.phoneNumber, phoneNumber)
+      eq(messages.phoneNumber, normalized)
     ))
     .orderBy(desc(messages.smsTimestamp))
     .limit(opts?.limit ?? 500)

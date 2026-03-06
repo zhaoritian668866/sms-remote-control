@@ -138,14 +138,6 @@ export async function initMqttBroker(server: HttpServer) {
     }
   });
 
-  // DEBUG: Internal subscriber to verify broker.publish() reaches mqemitter
-  broker.subscribe('device/+/down/send_sms', (packet: any, cb: any) => {
-    console.log(`[MQTT-DEBUG] Internal subscriber received send_sms on ${packet.topic}, payload=${packet.payload.toString().substring(0, 100)}`);
-    cb();
-  }, () => {
-    console.log('[MQTT-DEBUG] Internal subscriber registered for device/+/down/send_sms');
-  });
-
   return broker;
 }
 
