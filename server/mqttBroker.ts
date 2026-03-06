@@ -503,15 +503,26 @@ async function handleDeviceLog(clientId: string, data: { level: string; tag: str
 
 /** Publish a message to a specific MQTT topic (all subscribers receive it) */
 function publishToTopic(topic: string, data: any) {
-  if (!broker) return;
+  if (!broker) {
+    console.error("[MQTT] publishToTopic: broker is null!");
+    return;
+  }
+  const payload = Buffer.from(JSON.stringify(data));
+  console.log(`[MQTT] publishToTopic: topic=${topic}, payloadLen=${payload.length}, connectedClients=${broker.connectedClients}`);
   broker.publish({
     topic,
-    payload: Buffer.from(JSON.stringify(data)),
-    qos: 1,
+    payload,
+    qos: 0,
     retain: false,
     cmd: "publish",
     dup: false,
-  } as any, () => {});
+  } as any, (err: any) => {
+    if (err) {
+      console.error(`[MQTT] publishToTopic ERROR: ${err.message}`);
+    } else {
+      console.log(`[MQTT] publishToTopic: published OK to ${topic}`);
+    }
+  });
 }
 
 /** Publish an event to all dashboard clients of a specific user */
