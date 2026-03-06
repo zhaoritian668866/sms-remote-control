@@ -245,8 +245,8 @@ describe("device.quota", () => {
 // ─── Pairing Token Generation Tests ───
 
 describe("pairing.generate", () => {
-  it("always allows generating pairing token (quota check moved to wsManager)", async () => {
-    // Quota check now happens during actual pairing in wsManager, not at token generation
+  it("always allows generating pairing token (quota check moved to mqttBroker)", async () => {
+    // Quota check now happens during actual pairing in mqttBroker, not at token generation
     // So pairing.generate should always succeed for authenticated users
     const user = createBaseUser({ maxDevices: 0 });
     const caller = appRouter.createCaller(createCtx(user));

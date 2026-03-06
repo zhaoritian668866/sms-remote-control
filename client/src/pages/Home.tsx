@@ -179,7 +179,7 @@ export default function Home() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-body">
             <div>
               <span className="text-muted-foreground">通信协议：</span>
-              <span className="text-foreground/80 ml-1">WebSocket</span>
+              <span className="text-foreground/80 ml-1">MQTT</span>
             </div>
             <div>
               <span className="text-muted-foreground">最大信使数：</span>

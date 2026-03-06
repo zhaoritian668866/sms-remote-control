@@ -8,7 +8,6 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { initWebSocket } from "../wsManager";
 import { initMqttBroker } from "../mqttBroker";
 import { nanoid } from "nanoid";
 import multer from "multer";
@@ -127,16 +126,8 @@ async function startServer() {
     })
   );
 
-  // Initialize WebSocket server (legacy, for v2.x/v3.x clients)
-  initWebSocket(server);
-
-  // Initialize MQTT Broker (new, for v3.5+ clients)
-  // Wrapped in try-catch so MQTT failure does NOT prevent server startup or Socket.IO
-  try {
-    await initMqttBroker(server);
-  } catch (err) {
-    console.error("[MQTT] Broker failed to start (Socket.IO still works):", err);
-  }
+  // Initialize MQTT Broker (single protocol for all clients)
+  await initMqttBroker(server);
 
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {

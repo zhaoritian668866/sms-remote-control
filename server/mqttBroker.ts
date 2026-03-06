@@ -1,8 +1,8 @@
 /**
- * MQTT Broker (Aedes) + Message Handler
+ * MQTT Broker (Aedes) — Single Protocol
  * 
- * Replaces Socket.IO with MQTT for more stable mobile connections.
- * Uses WebSocket transport on the same HTTP server (path: /api/mqtt).
+ * All device and dashboard communication goes through MQTT.
+ * Socket.IO has been removed entirely.
  * 
  * Topic structure:
  *   device/{deviceId}/up/sms_received     - Device reports incoming SMS
@@ -48,10 +48,11 @@ const deviceClientMap = new Map<string, string>();   // clientId -> deviceId
 const dashboardClients = new Map<string, number>();  // clientId -> userId
 const pendingSmsSends = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void; timer: NodeJS.Timeout }>();
 
-let broker: any;
+let broker: any = null;
 
 export async function initMqttBroker(server: HttpServer) {
-  broker = await (Aedes as any).createBroker();
+  // Aedes v1.x: use static createBroker() instead of removed default export
+  broker = await Aedes.createBroker();
 
   // Use websocket-stream to attach MQTT over WebSocket to the HTTP server
   (wsStream as any).createServer({ server, path: "/api/mqtt" }, broker.handle);
@@ -113,16 +114,19 @@ export async function initMqttBroker(server: HttpServer) {
       const userId = payload.userId;
       if (userId) {
         dashboardClients.set(client.id, userId);
-        // Subscribe this client to their dashboard topic
-        publishToClient(client.id, "dashboard/registered", { success: true });
         console.log(`[MQTT] Dashboard registered: clientId=${client.id}, userId=${userId}`);
+        // Send ack back via the dashboard events topic (client subscribes to this)
+        publishToTopic(`dashboard/${userId}/events`, { event: "registered", data: { success: true } });
       }
       return;
     }
 
     // ─── Dashboard heartbeat ───
     if (topic === "dashboard/heartbeat") {
-      publishToClient(client.id, "dashboard/heartbeat_ack", { ts: Date.now() });
+      const userId = dashboardClients.get(client.id);
+      if (userId) {
+        publishToTopic(`dashboard/${userId}/events`, { event: "heartbeat_ack", data: { ts: Date.now() } });
+      }
       return;
     }
   });
@@ -167,16 +171,16 @@ async function handlePair(clientId: string, tempDeviceId: string, data: { token:
   try {
     const tokenRecord = await getPairingTokenByToken(data.token);
     if (!tokenRecord) {
-      publishToClient(clientId, `device/${tempDeviceId}/down/pair_result`, { success: false, error: "Invalid token" });
+      publishToTopic(`device/${tempDeviceId}/down/pair_result`, { success: false, error: "Invalid token" });
       return;
     }
     if (tokenRecord.status !== "pending") {
-      publishToClient(clientId, `device/${tempDeviceId}/down/pair_result`, { success: false, error: "Token already used or expired" });
+      publishToTopic(`device/${tempDeviceId}/down/pair_result`, { success: false, error: "Token already used or expired" });
       return;
     }
     if (new Date(tokenRecord.expiresAt) < new Date()) {
       await updatePairingToken(tokenRecord.id, { status: "expired" });
-      publishToClient(clientId, `device/${tempDeviceId}/down/pair_result`, { success: false, error: "Token expired" });
+      publishToTopic(`device/${tempDeviceId}/down/pair_result`, { success: false, error: "Token expired" });
       return;
     }
 
@@ -223,23 +227,25 @@ async function handlePair(clientId: string, tempDeviceId: string, data: { token:
       device = { ...existing, deviceId, isOnline: true };
       console.log(`[MQTT] Quota full (${maxDevices}/${maxDevices}), re-paired oldest device id=${existing.id}, new deviceId=${deviceId}`);
     } else {
-      publishToClient(clientId, `device/${tempDeviceId}/down/pair_result`, { success: false, error: "No device quota available" });
+      publishToTopic(`device/${tempDeviceId}/down/pair_result`, { success: false, error: "No device quota available" });
       return;
     }
 
     await updatePairingToken(tokenRecord.id, { status: "paired", deviceId: device.id });
 
-    // Register device
+    // Register device connection
     connectedDevices.set(deviceId, clientId);
     deviceClientMap.set(clientId, deviceId);
 
     // IMPORTANT: Send pair_result to the TEMP deviceId topic that the client is subscribed to
-    publishToClient(clientId, `device/${tempDeviceId}/down/pair_result`, { success: true, deviceId });
+    publishToTopic(`device/${tempDeviceId}/down/pair_result`, { success: true, deviceId });
 
     publishToDashboard(tokenRecord.userId, "device_paired", { device });
+
+    console.log(`[MQTT] Device paired successfully: ${deviceId}, clientId=${clientId}`);
   } catch (err: any) {
     console.error("[MQTT] Pair error:", err);
-    publishToClient(clientId, `device/${tempDeviceId}/down/pair_result`, { success: false, error: err.message });
+    publishToTopic(`device/${tempDeviceId}/down/pair_result`, { success: false, error: err.message });
   }
 }
 
@@ -249,7 +255,7 @@ async function handleReconnect(clientId: string, topicDeviceId: string, data: { 
     const deviceId = data.deviceId || topicDeviceId;
     const device = await getDeviceByDeviceId(deviceId);
     if (!device) {
-      publishToClient(clientId, `device/${deviceId}/down/reconnect_result`, { success: false, error: "Device not found" });
+      publishToTopic(`device/${deviceId}/down/reconnect_result`, { success: false, error: "Device not found" });
       return;
     }
 
@@ -264,19 +270,21 @@ async function handleReconnect(clientId: string, topicDeviceId: string, data: { 
 
     await setDeviceOnline(deviceId, true);
 
-    publishToClient(clientId, `device/${deviceId}/down/reconnect_result`, { success: true });
+    publishToTopic(`device/${deviceId}/down/reconnect_result`, { success: true });
 
     publishToDashboard(device.userId, "device_online", { deviceId });
+
+    console.log(`[MQTT] Device reconnected: ${deviceId}, clientId=${clientId}`);
   } catch (err: any) {
     console.error("[MQTT] Reconnect error:", err);
-    publishToClient(clientId, `device/${topicDeviceId}/down/reconnect_result`, { success: false, error: err.message });
+    publishToTopic(`device/${topicDeviceId}/down/reconnect_result`, { success: false, error: err.message });
   }
 }
 
 // ─── Heartbeat ───
 function handleHeartbeat(clientId: string, topicDeviceId: string) {
   const deviceId = deviceClientMap.get(clientId) || topicDeviceId;
-  publishToClient(clientId, `device/${deviceId}/down/heartbeat_ack`, { ts: Date.now() });
+  publishToTopic(`device/${deviceId}/down/heartbeat_ack`, { ts: Date.now() });
   if (deviceId) {
     setDeviceOnline(deviceId, true).catch(() => {});
   }
@@ -320,7 +328,7 @@ async function handleSmsReceived(clientId: string, data: { phoneNumber: string; 
     if (process.env.BUILT_IN_FORGE_API_URL && process.env.BUILT_IN_FORGE_API_KEY) {
       try {
         await notifyOwner({
-          title: `📱 新短信 - ${device.name}`,
+          title: `新短信 - ${device.name}`,
           content: `来自 ${data.contactName || data.phoneNumber} 的短信:\n${data.body}`,
         });
       } catch (e) {
@@ -442,8 +450,8 @@ async function handleDeviceLog(clientId: string, data: { level: string; tag: str
 
 // ─── Publish helpers ───
 
-/** Publish a message to a specific MQTT client by clientId */
-function publishToClient(clientId: string, topic: string, data: any) {
+/** Publish a message to a specific MQTT topic (all subscribers receive it) */
+function publishToTopic(topic: string, data: any) {
   if (!broker) return;
   broker.publish({
     topic,
@@ -470,7 +478,7 @@ export function publishToDashboard(userId: number, event: string, data: any) {
   } as any, () => {});
 }
 
-// ─── Exported functions (same interface as wsManager) ───
+// ─── Exported functions ───
 
 /** Send SMS command to a device via MQTT */
 export async function sendSmsToDevice(deviceId: string, phoneNumber: string, body: string): Promise<{ success: boolean; error?: string }> {
@@ -489,7 +497,7 @@ export async function sendSmsToDevice(deviceId: string, phoneNumber: string, bod
 
     pendingSmsSends.set(requestId, { resolve, reject: () => {}, timer });
 
-    publishToClient(clientId, `device/${deviceId}/down/send_sms`, {
+    publishToTopic(`device/${deviceId}/down/send_sms`, {
       requestId,
       phoneNumber,
       body,
@@ -514,7 +522,7 @@ export async function sendMmsToDevice(deviceId: string, phoneNumber: string, ima
 
     pendingSmsSends.set(requestId, { resolve, reject: () => {}, timer });
 
-    publishToClient(clientId, `device/${deviceId}/down/send_mms`, {
+    publishToTopic(`device/${deviceId}/down/send_mms`, {
       requestId,
       phoneNumber,
       imageUrl,
@@ -528,7 +536,7 @@ export function isDeviceConnected(deviceId: string): boolean {
   return connectedDevices.has(deviceId);
 }
 
-/** Alias for publishToDashboard to match wsManager interface */
+/** Broadcast to dashboard (alias for publishToDashboard) */
 export function broadcastToDashboard(userId: number, event: string, data: any) {
   publishToDashboard(userId, event, data);
 }
@@ -537,7 +545,7 @@ export function broadcastToDashboard(userId: number, event: string, data: any) {
 export function sendSyncSmsRequest(deviceId: string) {
   const clientId = connectedDevices.get(deviceId);
   if (clientId) {
-    publishToClient(clientId, `device/${deviceId}/down/sync_sms`, {});
+    publishToTopic(`device/${deviceId}/down/sync_sms`, {});
     console.log(`[MQTT] Sent sync_sms_request to device ${deviceId}`);
   }
 }

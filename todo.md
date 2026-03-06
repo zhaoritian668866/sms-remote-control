@@ -165,4 +165,12 @@
 - [x] BUG: Vite HMR WebSocket 连接失败（开发环境代理问题，不影响生产）
 - [x] BUG: v3.5.0 配对一直卡住，显示“正在配对”
 - [ ] BUG: v3.5.0 配对仍然不上（第二次排查）
-- [ ] BUG: 紧急 - 老版本 2.0 也配对不上了，后端改动影响了 Socket.IO 配对
+- [x] BUG: 紧急 - 老版本 2.0 也配对不上了（MQTT 初始化失败导致服务器崩溃）
+- [x] BUG: 配对成功但设备显示离线（统一为纯 MQTT 协议解决）
+- [x] BUG: Dashboard MQTT 连接疯狂断连重连循环（移除 Socket.IO 降级 + clean session）
+- [x] 重构: 统一为纯 MQTT 协议，彻底移除 Socket.IO
+- [x] 重构: 后端 routers.ts 和 bulkEngine.ts 改用 mqttBroker 导出函数
+- [x] 重构: 前端 useSocket.ts 移除 Socket.IO 降级逻辑
+- [x] 重构: 服务器入口移除 initWebSocket 调用
+- [x] 修复: MQTT publishToClient 改为 publishToTopic 确保消息送达
+- [x] 修复: Dashboard MQTT 连接稳定性（clean session + 合理 keepalive）
