@@ -89,6 +89,13 @@ export async function initMqttBroker(server: HttpServer) {
     dashboardClients.delete(clientId);
   });
 
+  // ─── Client subscriptions (debug) ───
+  broker.on("subscribe", (subscriptions: any[], client: any) => {
+    if (!client) return;
+    const topics = subscriptions.map((s: any) => s.topic).join(", ");
+    console.log(`[MQTT] Client ${client.id} subscribed to: ${topics}`);
+  });
+
   // ─── Message routing ───
   broker.on("publish", async (packet: any, client: any) => {
     if (!client) return; // System messages (retained, etc.)
