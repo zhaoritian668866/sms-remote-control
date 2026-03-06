@@ -1028,3 +1028,24 @@ export async function getChatContactsByDeviceId(deviceId: number) {
     hasReplied: Number(r.incomingCount) > 0,
   }));
 }
+
+
+// ─── Messages by Contact (for chat view) ───
+
+/**
+ * Get messages for a specific device + phone number combination.
+ * Returns all messages for that contact, ordered by time ascending.
+ */
+export async function getMessagesByContact(deviceId: number, phoneNumber: string, opts?: { limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(messages)
+    .where(and(
+      eq(messages.deviceId, deviceId),
+      eq(messages.phoneNumber, phoneNumber)
+    ))
+    .orderBy(desc(messages.smsTimestamp))
+    .limit(opts?.limit ?? 500)
+    .offset(opts?.offset ?? 0);
+}

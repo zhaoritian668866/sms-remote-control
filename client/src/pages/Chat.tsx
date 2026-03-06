@@ -51,10 +51,10 @@ export default function Chat() {
     { enabled: !!user && deviceId > 0, refetchInterval: 15000 }
   );
 
-  // 获取当前选中联系人的消息（按需加载）
-  const { data: messageList, refetch: refetchMessages } = trpc.sms.list.useQuery(
-    { deviceId, limit: 200, offset: 0 },
-    { enabled: !!user && deviceId > 0, refetchInterval: 10000 }
+  // 获取当前选中联系人的消息（按联系人单独加载，不受全局 limit 限制）
+  const { data: messageList, refetch: refetchMessages } = trpc.sms.contactMessages.useQuery(
+    { deviceId, phoneNumber: selectedContact || "", limit: 500 },
+    { enabled: !!user && deviceId > 0 && !!selectedContact, refetchInterval: 10000 }
   );
 
   // 获取置顶联系人列表
@@ -285,9 +285,7 @@ export default function Chat() {
   // 当前联系人的消息（按时间正序）
   const currentMessages = useMemo(() => {
     if (!messageList || !selectedContact) return [];
-    return [...messageList]
-      .filter(m => m.phoneNumber === selectedContact)
-      .sort((a, b) => a.smsTimestamp - b.smsTimestamp);
+    return [...messageList].sort((a, b) => a.smsTimestamp - b.smsTimestamp);
   }, [messageList, selectedContact]);
 
   // 切换联系人时滚动到底部

@@ -68,6 +68,7 @@ import {
   getDeviceStats,
   getAllDeviceStats,
   getChatContactsByDeviceId,
+  getMessagesByContact,
 } from "./db";
 import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
 import { saveFileLocally } from "./_core/index";
@@ -316,6 +317,23 @@ export const appRouter = router({
         const device = await getDeviceById(input.deviceId);
         if (!device || device.userId !== ctx.user.id) return [];
         return getChatContactsByDeviceId(input.deviceId);
+      }),
+
+    // Get messages for a specific contact (not limited by global message count)
+    contactMessages: protectedProcedure
+      .input(z.object({
+        deviceId: z.number(),
+        phoneNumber: z.string().min(1),
+        limit: z.number().min(1).max(1000).default(500),
+        offset: z.number().min(0).default(0),
+      }))
+      .query(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) return [];
+        return getMessagesByContact(input.deviceId, input.phoneNumber, {
+          limit: input.limit,
+          offset: input.offset,
+        });
       }),
 
     send: protectedProcedure
