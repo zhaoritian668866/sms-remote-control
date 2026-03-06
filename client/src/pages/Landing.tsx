@@ -160,13 +160,13 @@ export default function Landing() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12 animate-[ink-fade_1s_ease-out_1.4s_both]">
             <a
               href={APK_DOWNLOAD_URL}
-              download="飞鸽传书-v3.2.0.apk"
+              download="飞鸽传书-v3.2.1.apk"
               className="group flex items-center gap-3 px-8 py-3.5 bg-foreground/10 border border-foreground/20 hover:bg-vermilion/10 hover:border-vermilion/30 transition-all duration-300"
             >
               <Download className="w-5 h-5 text-vermilion group-hover:animate-bounce" />
               <div className="text-left">
                 <span className="block text-sm font-serif tracking-wider text-foreground">下载 Android 客户端</span>
-                <span className="block text-xs font-body text-muted-foreground">v3.2.0 · 26.5 MB</span>
+                <span className="block text-xs font-body text-muted-foreground">v3.2.1 · 26.5 MB</span>
               </div>
             </a>
             <button

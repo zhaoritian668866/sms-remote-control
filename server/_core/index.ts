@@ -79,8 +79,8 @@ async function startServer() {
   });
 
   // App version info
-  const APP_VERSION = "3.2.0";
-  const APK_CDN_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663393087442/4rTHqCojuh9Vnb7GsHmjrf/sms-remote-v3.2_19253a52.zip";
+  const APP_VERSION = "3.2.1";
+  const APK_CDN_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663393087442/4rTHqCojuh9Vnb7GsHmjrf/sms-remote-v3.2.1_577f021a.zip";
 
   // Version check API (for auto-update)
   app.get("/api/app/version", (_req: any, res: any) => {
