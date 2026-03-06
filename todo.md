@@ -150,3 +150,11 @@
 - [x] 修复: 手机端作为默认短信应用时收发短信功能恢复正常
 - [x] 编译 v3.4.0 APK 并上传 CDN
 - [x] 部署后端修复到服务器
+- [ ] BUG: 电脑端收到重复消息（同一条短信收到两次）
+- [ ] 优化: Android 端完全接管手机短信，体验接近原生短信APP
+- [ ] 优化: 连接稳定性提升（评估 MQTT/HTTP 轮询等替代方案）
+- [ ] 迁移: 后端增加 MQTT Broker（Aedes），保留 Socket.IO 并存
+- [ ] 迁移: Web 前端增加 MQTT.js client，优先 MQTT 降级 Socket.IO
+- [ ] 迁移: Android 端增加 MqttManager（Paho），优先 MQTT 降级 Socket.IO
+- [ ] 修复: 消息去重（服务端 smsTimestamp+phoneNumber+deviceId 去重）
+- [ ] 功能: MQTT 持久会话支持离线消息补发

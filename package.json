@@ -47,6 +47,7 @@
     "@trpc/react-query": "^11.6.0",
     "@trpc/server": "^11.6.0",
     "@types/multer": "^2.0.0",
+    "aedes": "^1.0.0",
     "axios": "^1.12.0",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
@@ -62,6 +63,7 @@
     "input-otp": "^1.4.2",
     "jose": "6.1.0",
     "lucide-react": "^0.453.0",
+    "mqtt": "^5.15.0",
     "multer": "^2.1.1",
     "mysql2": "^3.15.0",
     "nanoid": "^5.1.5",
@@ -81,6 +83,7 @@
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
+    "websocket-stream": "^5.5.2",
     "wouter": "^3.3.5",
     "zod": "^4.1.12"
   },
