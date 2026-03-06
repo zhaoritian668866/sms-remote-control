@@ -524,11 +524,14 @@ export function publishToDashboard(userId: number, event: string, data: any) {
 
 // ─── Exported functions ───
 
-/** Send SMS command to a device via MQTT */
+/** Send SMS command to a device via MQTT.
+ * No longer checks connectedDevices map — MQTT pub/sub means
+ * if the device is subscribed to the topic it will receive the message.
+ * If the device is offline, the request will simply time out.
+ */
 export async function sendSmsToDevice(deviceId: string, phoneNumber: string, body: string): Promise<{ success: boolean; error?: string }> {
-  const clientId = connectedDevices.get(deviceId);
-  if (!clientId) {
-    return { success: false, error: "Device not connected" };
+  if (!broker) {
+    return { success: false, error: "MQTT broker not initialized" };
   }
 
   const requestId = nanoid(12);
@@ -536,7 +539,7 @@ export async function sendSmsToDevice(deviceId: string, phoneNumber: string, bod
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       pendingSmsSends.delete(requestId);
-      resolve({ success: false, error: "Send timeout (30s)" });
+      resolve({ success: false, error: "Send timeout (30s) — device may be offline" });
     }, 30000);
 
     pendingSmsSends.set(requestId, { resolve, reject: () => {}, timer });
@@ -546,14 +549,17 @@ export async function sendSmsToDevice(deviceId: string, phoneNumber: string, bod
       phoneNumber,
       body,
     });
+
+    console.log(`[MQTT] send_sms published to device/${deviceId}/down/send_sms, requestId=${requestId}, phone=${phoneNumber}`);
   });
 }
 
-/** Send MMS command to a device via MQTT */
+/** Send MMS command to a device via MQTT.
+ * Same as sendSmsToDevice — no connectedDevices check, just publish.
+ */
 export async function sendMmsToDevice(deviceId: string, phoneNumber: string, imageUrl: string, body?: string): Promise<{ success: boolean; error?: string }> {
-  const clientId = connectedDevices.get(deviceId);
-  if (!clientId) {
-    return { success: false, error: "Device not connected" };
+  if (!broker) {
+    return { success: false, error: "MQTT broker not initialized" };
   }
 
   const requestId = nanoid(12);
@@ -561,7 +567,7 @@ export async function sendMmsToDevice(deviceId: string, phoneNumber: string, ima
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       pendingSmsSends.delete(requestId);
-      resolve({ success: false, error: "MMS send timeout (60s)" });
+      resolve({ success: false, error: "MMS send timeout (60s) — device may be offline" });
     }, 60000);
 
     pendingSmsSends.set(requestId, { resolve, reject: () => {}, timer });
@@ -572,10 +578,15 @@ export async function sendMmsToDevice(deviceId: string, phoneNumber: string, ima
       imageUrl,
       body: body || "",
     });
+
+    console.log(`[MQTT] send_mms published to device/${deviceId}/down/send_mms, requestId=${requestId}, phone=${phoneNumber}`);
   });
 }
 
-/** Check if a device is currently connected */
+/** Check if a device is currently connected.
+ * Note: This checks the in-memory map which may be stale after server restart.
+ * For sending commands, prefer just publishing to the topic directly.
+ */
 export function isDeviceConnected(deviceId: string): boolean {
   return connectedDevices.has(deviceId);
 }
@@ -587,11 +598,8 @@ export function broadcastToDashboard(userId: number, event: string, data: any) {
 
 /** Send sync SMS request to a device */
 export function sendSyncSmsRequest(deviceId: string) {
-  const clientId = connectedDevices.get(deviceId);
-  if (clientId) {
-    publishToTopic(`device/${deviceId}/down/sync_sms`, {});
-    console.log(`[MQTT] Sent sync_sms_request to device ${deviceId}`);
-  }
+  publishToTopic(`device/${deviceId}/down/sync_sms`, {});
+  console.log(`[MQTT] Sent sync_sms_request to device ${deviceId}`);
 }
 
 /** Get connected device IDs */

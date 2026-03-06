@@ -80,14 +80,14 @@ async function startServer() {
 
   // App version info
   const APP_VERSION = "3.6.0";
-  const APK_CDN_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663393087442/ExjlMuPqpNHXeVNN.apk";
+  const APK_CDN_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663393087442/GZANilHfsSwFKiKi.apk";
 
   // Version check API (for auto-update)
   app.get("/api/app/version", (_req: any, res: any) => {
     res.json({
       version: APP_VERSION,
       downloadUrl: `${_req.protocol}://${_req.get("host")}/api/download/apk`,
-      releaseNotes: "v3.6.0: 纯MQTT协议、修复消息方向误报、号码归一化、双重去重、水墨UI",
+      releaseNotes: "v3.6.0: 纯MQTT协议、修复发送不工作、修复消息方向误报、智能号码归一化、双重去重、水墨UI",
     });
   });
 

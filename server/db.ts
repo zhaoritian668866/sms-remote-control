@@ -410,61 +410,75 @@ export async function expireOldTokens(userId: number) {
 // ─── Message Queries ───
 
 /**
- * Normalize phone number for storage and comparison.
- * Handles international format (+855962323632) and local format (0962323632)
- * so they resolve to the same canonical form.
- *
- * Strategy:
- * 1. Strip all non-digit characters (except leading +)
- * 2. If starts with +, remove + and strip country code
- * 3. Remove leading zeros
- * Result: pure local digits, e.g. "962323632"
- *
- * Examples:
- *   +8618818818812 -> 18818818812
- *   18818818812    -> 18818818812
- *   +855962323632  -> 962323632
- *   0962323632     -> 962323632
- *   +14155552671   -> 4155552671
+ * Normalize a phone number for storage and comparison.
+ * 
+ * Strategy: Extract the "significant tail" of the number.
+ * The key insight is that the same contact's number always shares
+ * the same trailing digits regardless of format:
+ *   - 18818818812     -> 18818818812
+ *   - +8618818818812  -> 18818818812
+ *   - 0962323632      -> 962323632
+ *   - +855962323632   -> 962323632
+ *   - +14155552671    -> 4155552671
+ *   - 004155552671    -> 4155552671
+ * 
+ * Algorithm:
+ * 1. Strip all non-digit characters
+ * 2. Remove leading zeros
+ * 3. If the result is > 11 digits, it likely has a country code.
+ *    Take the last 10 digits as the significant portion.
+ *    (Most national numbers are 7-11 digits; 10 covers most cases.)
+ *    If <= 11 digits, keep as-is (it's already a local/national number).
  */
 export function normalizePhone(phone: string): string {
-  // Strip spaces, dashes, parens
-  let n = phone.replace(/[\s\-()]/g, "");
+  // Step 1: Strip everything except digits
+  let digits = phone.replace(/[^0-9]/g, "");
 
-  // Handle + prefix: strip country code
-  if (n.startsWith("+")) {
-    n = n.substring(1);
-    n = stripCountryCode(n);
-  } else if (n.startsWith("00")) {
-    // International dialing prefix (00XX...)
-    n = n.substring(2);
-    n = stripCountryCode(n);
+  // Step 2: Remove leading zeros
+  digits = digits.replace(/^0+/, "");
+
+  // Step 3: If too long (has country code), take the significant tail
+  // Most national numbers are 7-11 digits. We keep the last 11 digits max
+  // to preserve the full national number while stripping country codes.
+  if (digits.length > 11) {
+    // Try to detect common patterns:
+    // For numbers like 8618818818812 (13 digits), country code is 86, local is 18818818812 (11 digits)
+    // For numbers like 855962323632 (12 digits), country code is 855, local is 962323632 (9 digits)
+    // For numbers like 14155552671 (11 digits), country code is 1, local is 4155552671 (10 digits)
+    // Strategy: try removing 1, 2, 3 digit country codes and pick the best fit
+    for (let ccLen = 1; ccLen <= 3; ccLen++) {
+      if (digits.length > ccLen) {
+        const tail = digits.substring(ccLen).replace(/^0+/, "");
+        if (tail.length >= 7 && tail.length <= 11) {
+          return tail;
+        }
+      }
+    }
+    // Fallback: just take last 10 digits
+    return digits.slice(-10);
   }
 
-  // Remove leading zeros (local format)
-  n = n.replace(/^0+/, "");
-
-  return n;
+  return digits;
 }
 
 /**
- * Strip country code from a digit string.
- * Tries 1, 2, 3 digit prefixes and picks the one that leaves
- * a reasonable local number (7-11 digits).
+ * Check if two phone numbers likely belong to the same contact.
+ * Compares the trailing N digits (where N = min(len1, len2, 7)).
+ * This handles cases where normalizePhone alone might not perfectly strip
+ * country codes for unusual number formats.
  */
-function stripCountryCode(digits: string): string {
-  if (digits.length <= 11) return digits;
-
-  for (let prefixLen = 1; prefixLen <= 3; prefixLen++) {
-    if (digits.length > prefixLen) {
-      const local = digits.substring(prefixLen);
-      if (local.length >= 7 && local.length <= 11) {
-        return local.replace(/^0+/, "");
-      }
-    }
-  }
-  // Fallback: return as-is
-  return digits;
+export function isSamePhoneNumber(phone1: string, phone2: string): boolean {
+  const n1 = normalizePhone(phone1);
+  const n2 = normalizePhone(phone2);
+  
+  // Exact match after normalization
+  if (n1 === n2) return true;
+  
+  // Tail match: compare the last min(len1, len2, 9) digits
+  const tailLen = Math.min(n1.length, n2.length, 9);
+  if (tailLen < 7) return false; // Too short to reliably compare
+  
+  return n1.slice(-tailLen) === n2.slice(-tailLen);
 }
 
 /** Check if a message with same deviceId + phoneNumber + smsTimestamp already exists (dedup) */
