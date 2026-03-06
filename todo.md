@@ -163,3 +163,4 @@
 - [x] 功能: MQTT 持久会话支持离线消息补发
 - [x] BUG: 前端 MQTT 连接报错 "The string did not match the expected pattern"
 - [x] BUG: Vite HMR WebSocket 连接失败（开发环境代理问题，不影响生产）
+- [ ] BUG: v3.5.0 配对一直卡住，显示"正在配对"

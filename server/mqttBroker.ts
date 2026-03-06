@@ -233,7 +233,8 @@ async function handlePair(clientId: string, tempDeviceId: string, data: { token:
     connectedDevices.set(deviceId, clientId);
     deviceClientMap.set(clientId, deviceId);
 
-    publishToClient(clientId, `device/${deviceId}/down/pair_result`, { success: true, deviceId });
+    // IMPORTANT: Send pair_result to the TEMP deviceId topic that the client is subscribed to
+    publishToClient(clientId, `device/${tempDeviceId}/down/pair_result`, { success: true, deviceId });
 
     publishToDashboard(tokenRecord.userId, "device_paired", { device });
   } catch (err: any) {
