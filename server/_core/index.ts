@@ -79,15 +79,15 @@ async function startServer() {
   });
 
   // App version info
-  const APP_VERSION = "3.2.2";
-  const APK_CDN_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663393087442/4rTHqCojuh9Vnb7GsHmjrf/sms-remote-v3.2.2_7ec763f3.zip";
+  const APP_VERSION = "3.3.0";
+  const APK_CDN_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663393087442/4rTHqCojuh9Vnb7GsHmjrf/sms-remote-v3.3.0_4b5c265c.zip";
 
   // Version check API (for auto-update)
   app.get("/api/app/version", (_req: any, res: any) => {
     res.json({
       version: APP_VERSION,
       downloadUrl: `${_req.protocol}://${_req.get("host")}/api/download/apk`,
-      releaseNotes: "v3.2.2: 新增短信收件箱界面、启动时自动请求默认短信应用、自动同步历史短信",
+      releaseNotes: "v3.3.0: 完全接管默认短信应用职责（收发短信写入系统数据库）、启动时弹出默认短信设置、连接后自动同步历史短信",
     });
   });
 

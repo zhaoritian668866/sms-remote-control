@@ -137,3 +137,8 @@
 - [x] Android 端：短信会话列表页面（按联系人分组，显示最新一条短信和时间）
 - [x] Android 端：对话详情页面（查看与某联系人的所有短信记录，气泡样式）
 - [x] Android 端：主界面“查看短信收件箱”按钮入口
+- [x] BUG: 默认短信应用后收到短信未写入系统短信数据库（SmsReceiver 写入 content://sms/inbox）
+- [x] BUG: 发送短信后未写入系统已发送数据库（SmsSender 写入 content://sms/sent）
+- [x] BUG: 历史短信同步到服务器未正确触发（SmsService 连接成功后自动触发 syncAllSms）
+- [x] 功能: 手机端短信收发完整接管（收到写入inbox、发送写入sent、同步到服务器）
+- [x] 功能: 电脑端能查看手机上所有历史短信（完全同步）
