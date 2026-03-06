@@ -158,3 +158,4 @@
 - [ ] 迁移: Android 端增加 MqttManager（Paho），优先 MQTT 降级 Socket.IO
 - [ ] 修复: 消息去重（服务端 smsTimestamp+phoneNumber+deviceId 去重）
 - [ ] 功能: MQTT 持久会话支持离线消息补发
+- [x] 回滚到 v2.0 稳定版（Socket.IO 协议），Aedes MQTT 协议导致 Android 端无法可靠接收 send_sms 指令
