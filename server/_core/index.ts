@@ -79,15 +79,15 @@ async function startServer() {
   });
 
   // App version info
-  const APP_VERSION = "3.5.0";
-  const APK_CDN_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663393087442/CJzPfXvHiKzOtdAL.apk";
+  const APP_VERSION = "3.6.0";
+  const APK_CDN_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663393087442/ExjlMuPqpNHXeVNN.apk";
 
   // Version check API (for auto-update)
   app.get("/api/app/version", (_req: any, res: any) => {
     res.json({
       version: APP_VERSION,
       downloadUrl: `${_req.protocol}://${_req.get("host")}/api/download/apk`,
-      releaseNotes: "v3.5.0: 通信协议升级为MQTT（更稳定、不重复、不丢失）、消息去重、ContentObserver实时同步、原生短信体验优化",
+      releaseNotes: "v3.6.0: 纯MQTT协议、修复消息方向误报、号码归一化、双重去重、水墨UI",
     });
   });
 
