@@ -80,7 +80,7 @@ async function startServer() {
 
   // App version info
   const APP_VERSION = "3.4.0";
-  const APK_CDN_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663393087442/4rTHqCojuh9Vnb7GsHmjrf/sms-remote-v3.4.0_9b6be02d.zip";
+  const APK_CDN_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663393087442/fIqMxgTDXkaCTfjv.apk";
 
   // Version check API (for auto-update)
   app.get("/api/app/version", (_req: any, res: any) => {
@@ -91,9 +91,30 @@ async function startServer() {
     });
   });
 
-  // APK download endpoint (redirect to CDN)
-  app.get("/api/download/apk", (_req: any, res: any) => {
-    res.redirect(APK_CDN_URL);
+  // APK download endpoint (proxy download with correct filename)
+  app.get("/api/download/apk", async (_req: any, res: any) => {
+    try {
+      const response = await fetch(APK_CDN_URL);
+      if (!response.ok) {
+        res.redirect(APK_CDN_URL);
+        return;
+      }
+      res.setHeader("Content-Type", "application/vnd.android.package-archive");
+      res.setHeader("Content-Disposition", `attachment; filename="feige-v${APP_VERSION}.apk"`);
+      if (response.headers.get("content-length")) {
+        res.setHeader("Content-Length", response.headers.get("content-length")!);
+      }
+      const reader = response.body?.getReader();
+      if (!reader) { res.redirect(APK_CDN_URL); return; }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+      res.end();
+    } catch (e) {
+      res.redirect(APK_CDN_URL);
+    }
   });
 
   // tRPC API (includes self-hosted auth routes)
