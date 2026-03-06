@@ -510,7 +510,7 @@ async function handleDeviceLog(clientId: string, data: { level: string; tag: str
 // ─── Publish helpers ───
 
 /** Publish a message to a specific MQTT topic (all subscribers receive it) */
-function publishToTopic(topic: string, data: any) {
+export function publishToTopic(topic: string, data: any) {
   if (!broker) {
     console.error("[MQTT] publishToTopic: broker is null!");
     return;

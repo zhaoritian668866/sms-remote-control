@@ -8,7 +8,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { initMqttBroker } from "../mqttBroker";
+import { initMqttBroker, publishToTopic } from "../mqttBroker";
 import { nanoid } from "nanoid";
 import multer from "multer";
 
@@ -115,6 +115,16 @@ async function startServer() {
     } catch (e) {
       res.redirect(APK_CDN_URL);
     }
+  });
+
+  // DEBUG: Test endpoint to trigger broker.publish directly
+  app.get("/api/test/send-mqtt", (req: any, res: any) => {
+    const deviceId = req.query.deviceId || 'dev_IHS30MF7o-YTVhE6';
+    const topic = `device/${deviceId}/down/send_sms`;
+    const data = { requestId: 'test_' + Date.now(), phoneNumber: '10086', body: 'test from API' };
+    console.log(`[TEST] Triggering publishToTopic to ${topic}`);
+    publishToTopic(topic, data);
+    res.json({ ok: true, topic, data });
   });
 
   // tRPC API (includes self-hosted auth routes)
