@@ -161,3 +161,5 @@
 - [x] 迁移: Android 端增加 MqttManager（Paho），优先 MQTT 降级 Socket.IO
 - [x] 修复: 消息去重（服务端 smsTimestamp+phoneNumber+deviceId 去重）
 - [x] 功能: MQTT 持久会话支持离线消息补发
+- [x] BUG: 前端 MQTT 连接报错 "The string did not match the expected pattern"
+- [x] BUG: Vite HMR WebSocket 连接失败（开发环境代理问题，不影响生产）

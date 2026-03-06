@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import mqtt, { MqttClient } from "mqtt";
 import { io, Socket } from "socket.io-client";
 
-const HEARTBEAT_INTERVAL = 30000; // 30s heartbeat (MQTT is lighter)
+const HEARTBEAT_INTERVAL = 30000; // 30s heartbeat
 const HEARTBEAT_TIMEOUT = 15000;
 const RECONNECT_DELAY_BASE = 1000;
 const RECONNECT_DELAY_MAX = 15000;
@@ -137,21 +137,33 @@ export function useDashboardSocket(userId: number | undefined) {
   useEffect(() => {
     if (!userId) return;
 
-    // Build MQTT WebSocket URL
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const mqttUrl = `${protocol}//${window.location.host}/api/mqtt`;
+    // Build MQTT WebSocket URL — use full absolute URL to avoid browser pattern matching issues
+    const loc = window.location;
+    const wsProtocol = loc.protocol === "https:" ? "wss" : "ws";
+    const mqttUrl = `${wsProtocol}://${loc.host}/api/mqtt`;
     const clientId = `dashboard_${userId}_${Date.now()}`;
 
     console.log(`[Dashboard MQTT] Connecting to ${mqttUrl}...`);
 
-    const client = mqtt.connect(mqttUrl, {
-      clientId,
-      clean: false, // Persistent session for offline message delivery
-      keepalive: 60,
-      reconnectPeriod: RECONNECT_DELAY_BASE,
-      connectTimeout: 8000,
-      protocolVersion: 4,
-    });
+    let client: MqttClient;
+    try {
+      client = mqtt.connect(mqttUrl, {
+        clientId,
+        clean: false, // Persistent session for offline message delivery
+        keepalive: 60,
+        reconnectPeriod: RECONNECT_DELAY_BASE,
+        connectTimeout: 8000,
+        protocolVersion: 4,
+      });
+    } catch (err: any) {
+      // If MQTT.connect itself throws (e.g., URL pattern error in browser), fall back immediately
+      console.warn("[Dashboard MQTT] Connect failed:", err?.message);
+      if (!fallbackAttemptedRef.current) {
+        fallbackAttemptedRef.current = true;
+        startSocketIO(userId);
+      }
+      return;
+    }
 
     mqttRef.current = client;
     setTransport("mqtt");
@@ -227,6 +239,7 @@ export function useDashboardSocket(userId: number | undefined) {
     });
 
     client.on("error", (err) => {
+      // Silently handle MQTT errors - don't let them propagate to global error handlers
       console.warn("[Dashboard MQTT] Error:", err.message);
       // If MQTT keeps failing, fall back to Socket.IO
       if (!fallbackAttemptedRef.current && !client.connected) {
@@ -242,7 +255,7 @@ export function useDashboardSocket(userId: number | undefined) {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         if (mqttRef.current && !mqttRef.current.connected) {
-          mqttRef.current.reconnect();
+          try { mqttRef.current.reconnect(); } catch {}
         } else if (socketRef.current && !socketRef.current.connected) {
           socketRef.current.connect();
         }
@@ -251,7 +264,7 @@ export function useDashboardSocket(userId: number | undefined) {
 
     const handleOnline = () => {
       if (mqttRef.current && !mqttRef.current.connected) {
-        mqttRef.current.reconnect();
+        try { mqttRef.current.reconnect(); } catch {}
       } else if (socketRef.current && !socketRef.current.connected) {
         socketRef.current.connect();
       }
@@ -283,7 +296,7 @@ export function useDashboardSocket(userId: number | undefined) {
 
   const reconnect = useCallback(() => {
     if (mqttRef.current && !mqttRef.current.connected) {
-      mqttRef.current.reconnect();
+      try { mqttRef.current.reconnect(); } catch {}
     } else if (socketRef.current && !socketRef.current.connected) {
       socketRef.current.connect();
     }
