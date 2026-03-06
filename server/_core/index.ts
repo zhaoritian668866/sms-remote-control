@@ -80,7 +80,7 @@ async function startServer() {
 
   // App version info
   const APP_VERSION = "3.6.0";
-  const APK_CDN_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663393087442/GZANilHfsSwFKiKi.apk";
+  const APK_CDN_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663393087442/bFlyPQJbrVpHxtpt.apk";
 
   // Version check API (for auto-update)
   app.get("/api/app/version", (_req: any, res: any) => {

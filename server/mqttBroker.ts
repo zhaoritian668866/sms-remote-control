@@ -525,9 +525,9 @@ export function publishToDashboard(userId: number, event: string, data: any) {
 // ─── Exported functions ───
 
 /** Send SMS command to a device via MQTT.
- * No longer checks connectedDevices map — MQTT pub/sub means
- * if the device is subscribed to the topic it will receive the message.
- * If the device is offline, the request will simply time out.
+ * Uses retry mechanism: publishes the message, then retries every RETRY_INTERVAL
+ * if no sms_send_result is received, up to MAX_RETRIES times.
+ * This handles the case where the device briefly disconnects and resubscribes.
  */
 export async function sendSmsToDevice(deviceId: string, phoneNumber: string, body: string): Promise<{ success: boolean; error?: string }> {
   if (!broker) {
@@ -535,27 +535,61 @@ export async function sendSmsToDevice(deviceId: string, phoneNumber: string, bod
   }
 
   const requestId = nanoid(12);
+  const MAX_RETRIES = 5;
+  const RETRY_INTERVAL = 5000; // 5 seconds between retries
+  const TOTAL_TIMEOUT = 35000; // 35 seconds total
 
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
+    let retryCount = 0;
+    let resolved = false;
+
+    const doPublish = () => {
+      publishToTopic(`device/${deviceId}/down/send_sms`, {
+        requestId,
+        phoneNumber,
+        body,
+      });
+      retryCount++;
+      console.log(`[MQTT] send_sms published to device/${deviceId}/down/send_sms, requestId=${requestId}, phone=${phoneNumber}, attempt=${retryCount}/${MAX_RETRIES}`);
+    };
+
+    // Retry timer: re-publish every RETRY_INTERVAL if not yet resolved
+    const retryTimer = setInterval(() => {
+      if (resolved) { clearInterval(retryTimer); return; }
+      if (retryCount >= MAX_RETRIES) { clearInterval(retryTimer); return; }
+      console.log(`[MQTT] Retrying send_sms for requestId=${requestId}`);
+      doPublish();
+    }, RETRY_INTERVAL);
+
+    // Total timeout
+    const totalTimer = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      clearInterval(retryTimer);
       pendingSmsSends.delete(requestId);
-      resolve({ success: false, error: "Send timeout (30s) — device may be offline" });
-    }, 30000);
+      resolve({ success: false, error: `Send timeout (${TOTAL_TIMEOUT / 1000}s) — device may be offline` });
+    }, TOTAL_TIMEOUT);
 
-    pendingSmsSends.set(requestId, { resolve, reject: () => {}, timer });
-
-    publishToTopic(`device/${deviceId}/down/send_sms`, {
-      requestId,
-      phoneNumber,
-      body,
+    pendingSmsSends.set(requestId, {
+      resolve: (v: any) => {
+        if (resolved) return;
+        resolved = true;
+        clearInterval(retryTimer);
+        clearTimeout(totalTimer);
+        pendingSmsSends.delete(requestId);
+        resolve(v);
+      },
+      reject: () => {},
+      timer: totalTimer,
     });
 
-    console.log(`[MQTT] send_sms published to device/${deviceId}/down/send_sms, requestId=${requestId}, phone=${phoneNumber}`);
+    // First publish immediately
+    doPublish();
   });
 }
 
 /** Send MMS command to a device via MQTT.
- * Same as sendSmsToDevice — no connectedDevices check, just publish.
+ * Same retry mechanism as sendSmsToDevice.
  */
 export async function sendMmsToDevice(deviceId: string, phoneNumber: string, imageUrl: string, body?: string): Promise<{ success: boolean; error?: string }> {
   if (!broker) {
@@ -563,23 +597,54 @@ export async function sendMmsToDevice(deviceId: string, phoneNumber: string, ima
   }
 
   const requestId = nanoid(12);
+  const MAX_RETRIES = 5;
+  const RETRY_INTERVAL = 8000; // 8 seconds between retries (MMS takes longer)
+  const TOTAL_TIMEOUT = 60000; // 60 seconds total
 
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
+    let retryCount = 0;
+    let resolved = false;
+
+    const doPublish = () => {
+      publishToTopic(`device/${deviceId}/down/send_mms`, {
+        requestId,
+        phoneNumber,
+        imageUrl,
+        body: body || "",
+      });
+      retryCount++;
+      console.log(`[MQTT] send_mms published to device/${deviceId}/down/send_mms, requestId=${requestId}, phone=${phoneNumber}, attempt=${retryCount}/${MAX_RETRIES}`);
+    };
+
+    const retryTimer = setInterval(() => {
+      if (resolved) { clearInterval(retryTimer); return; }
+      if (retryCount >= MAX_RETRIES) { clearInterval(retryTimer); return; }
+      console.log(`[MQTT] Retrying send_mms for requestId=${requestId}`);
+      doPublish();
+    }, RETRY_INTERVAL);
+
+    const totalTimer = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      clearInterval(retryTimer);
       pendingSmsSends.delete(requestId);
-      resolve({ success: false, error: "MMS send timeout (60s) — device may be offline" });
-    }, 60000);
+      resolve({ success: false, error: `MMS send timeout (${TOTAL_TIMEOUT / 1000}s) — device may be offline` });
+    }, TOTAL_TIMEOUT);
 
-    pendingSmsSends.set(requestId, { resolve, reject: () => {}, timer });
-
-    publishToTopic(`device/${deviceId}/down/send_mms`, {
-      requestId,
-      phoneNumber,
-      imageUrl,
-      body: body || "",
+    pendingSmsSends.set(requestId, {
+      resolve: (v: any) => {
+        if (resolved) return;
+        resolved = true;
+        clearInterval(retryTimer);
+        clearTimeout(totalTimer);
+        pendingSmsSends.delete(requestId);
+        resolve(v);
+      },
+      reject: () => {},
+      timer: totalTimer,
     });
 
-    console.log(`[MQTT] send_mms published to device/${deviceId}/down/send_mms, requestId=${requestId}, phone=${phoneNumber}`);
+    doPublish();
   });
 }
 
