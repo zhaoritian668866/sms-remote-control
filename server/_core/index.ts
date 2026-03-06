@@ -131,7 +131,12 @@ async function startServer() {
   initWebSocket(server);
 
   // Initialize MQTT Broker (new, for v3.5+ clients)
-  await initMqttBroker(server);
+  // Wrapped in try-catch so MQTT failure does NOT prevent server startup or Socket.IO
+  try {
+    await initMqttBroker(server);
+  } catch (err) {
+    console.error("[MQTT] Broker failed to start (Socket.IO still works):", err);
+  }
 
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
