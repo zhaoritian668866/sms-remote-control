@@ -67,6 +67,7 @@ import {
   unpinContact,
   getDeviceStats,
   getAllDeviceStats,
+  getChatContactsByDeviceId,
 } from "./db";
 import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
 import { saveFileLocally } from "./_core/index";
@@ -306,6 +307,15 @@ export const appRouter = router({
           search: input.search,
           deviceId: input.deviceId,
         });
+      }),
+
+    // Get all unique contacts for a device (not limited by message count)
+    chatContacts: protectedProcedure
+      .input(z.object({ deviceId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) return [];
+        return getChatContactsByDeviceId(input.deviceId);
       }),
 
     send: protectedProcedure

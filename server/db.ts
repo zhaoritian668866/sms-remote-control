@@ -990,3 +990,41 @@ export async function getAllDeviceStats(opts?: { startTime?: number; endTime?: n
 
   return results;
 }
+
+
+// ─── Chat Contact List (independent of message limit) ───
+
+/**
+ * Get all unique contacts for a device with their latest message info.
+ * This query is NOT limited by message count, so all contacts will appear.
+ */
+export async function getChatContactsByDeviceId(deviceId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Use a subquery to get the latest message per contact (phone number)
+  const result = await db.select({
+    phoneNumber: messages.phoneNumber,
+    contactName: sql<string>`MAX(${messages.contactName})`.as("contactName"),
+    lastMessage: sql<string>`SUBSTRING(MAX(CONCAT(LPAD(${messages.smsTimestamp}, 20, '0'), ${messages.body})), 21)`.as("lastMessage"),
+    lastTime: sql<number>`MAX(${messages.smsTimestamp})`.as("lastTime"),
+    totalMessages: sql<number>`COUNT(*)`.as("totalMessages"),
+    incomingCount: sql<number>`SUM(CASE WHEN ${messages.direction} = 'incoming' THEN 1 ELSE 0 END)`.as("incomingCount"),
+    outgoingCount: sql<number>`SUM(CASE WHEN ${messages.direction} = 'outgoing' THEN 1 ELSE 0 END)`.as("outgoingCount"),
+  })
+    .from(messages)
+    .where(eq(messages.deviceId, deviceId))
+    .groupBy(messages.phoneNumber)
+    .orderBy(sql`MAX(${messages.smsTimestamp}) DESC`);
+
+  return result.map(r => ({
+    phoneNumber: r.phoneNumber,
+    contactName: r.contactName || null,
+    lastMessage: r.lastMessage ? (r.lastMessage.length > 30 ? r.lastMessage.slice(0, 30) + "..." : r.lastMessage) : "",
+    lastTime: r.lastTime,
+    totalMessages: Number(r.totalMessages),
+    incomingCount: Number(r.incomingCount),
+    outgoingCount: Number(r.outgoingCount),
+    hasReplied: Number(r.incomingCount) > 0,
+  }));
+}

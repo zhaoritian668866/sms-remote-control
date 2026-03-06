@@ -45,9 +45,15 @@ export default function Chat() {
     { enabled: !!user && deviceId > 0 }
   );
 
-  // 获取消息列表
+  // 获取联系人列表（独立接口，不受消息条数限制）
+  const { data: chatContactList, refetch: refetchContacts } = trpc.sms.chatContacts.useQuery(
+    { deviceId },
+    { enabled: !!user && deviceId > 0, refetchInterval: 15000 }
+  );
+
+  // 获取当前选中联系人的消息（按需加载）
   const { data: messageList, refetch: refetchMessages } = trpc.sms.list.useQuery(
-    { deviceId, limit: 500, offset: 0 },
+    { deviceId, limit: 200, offset: 0 },
     { enabled: !!user && deviceId > 0, refetchInterval: 10000 }
   );
 
@@ -162,6 +168,7 @@ export default function Chat() {
     const unsub1 = on("new_sms", (data: any) => {
       if (data.message?.deviceId === deviceId || data.deviceId === deviceId) {
         refetchMessages();
+        refetchContacts();
         // 如果没有选中联系人，自动选中来信号码
         if (!selectedContact && data.message?.phoneNumber) {
           setSelectedContact(data.message.phoneNumber);
@@ -172,11 +179,12 @@ export default function Chat() {
     const unsub2 = on("sms_status_update", (data: any) => {
       if (data.deviceId === deviceId) {
         refetchMessages();
+        refetchContacts();
       }
     });
 
     return () => { unsub1(); unsub2(); };
-  }, [on, deviceId, selectedContact, refetchMessages]);
+  }, [on, deviceId, selectedContact, refetchMessages, refetchContacts]);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -212,28 +220,23 @@ export default function Chat() {
     });
   }, [deviceId]);
 
-  // 获取所有联系人号码（去重，带最后消息时间、未读数、是否回复过）
+  // 获取所有联系人（使用独立接口，不受消息条数限制）
   const contacts = useMemo(() => {
-    if (!messageList) return [];
-    const contactMap = new Map<string, { number: string; lastMsg: string; lastTime: number; unread: number; name?: string; hasReplied: boolean }>();
-    // 按时间正序遍历，最后的会覆盖
-    const sorted = [...messageList].sort((a, b) => a.smsTimestamp - b.smsTimestamp);
-    for (const m of sorted) {
-      const existing = contactMap.get(m.phoneNumber);
-      const lastReadTs = readTimestamps[m.phoneNumber] || 0;
-      // 只计算收到的消息的未读数（发出的不算未读）
-      const isUnread = m.direction === "incoming" && m.smsTimestamp > lastReadTs;
-      // 只要有一条 incoming 消息就标记为已回复
-      const hasReplied = (existing?.hasReplied || false) || m.direction === "incoming";
-      contactMap.set(m.phoneNumber, {
-        number: m.phoneNumber,
-        lastMsg: m.body.length > 30 ? m.body.slice(0, 30) + "..." : m.body,
-        lastTime: m.smsTimestamp,
-        unread: (existing?.unread || 0) + (isUnread ? 1 : 0),
-        name: m.contactName || existing?.name,
-        hasReplied,
-      });
-    }
+    if (!chatContactList) return [];
+    // 从后端接口获取完整联系人列表，补充未读数
+    const result = chatContactList.map(c => {
+      const lastReadTs = readTimestamps[c.phoneNumber] || 0;
+      // 未读数：如果最后消息时间 > 已读时间戳，且有收信记录，标记为未读
+      const unread = c.hasReplied && c.lastTime > lastReadTs ? 1 : 0;
+      return {
+        number: c.phoneNumber,
+        lastMsg: c.lastMessage || "",
+        lastTime: c.lastTime,
+        unread,
+        name: c.contactName || undefined,
+        hasReplied: c.hasReplied,
+      };
+    });
     // 排序逻辑：置顶 > 未读 > 最后消息时间
     type ContactItem = { number: string; lastMsg: string; lastTime: number; unread: number; name?: string; hasReplied: boolean };
     const sortFn = (a: ContactItem, b: ContactItem) => {
@@ -245,8 +248,8 @@ export default function Chat() {
       if (a.unread === 0 && b.unread > 0) return 1;
       return b.lastTime - a.lastTime;
     };
-    return Array.from(contactMap.values()).sort(sortFn);
-  }, [messageList, readTimestamps, pinnedSet]);
+    return result.sort(sortFn);
+  }, [chatContactList, readTimestamps, pinnedSet]);
 
   // 分组：已回复 / 未回复
   const repliedContacts = useMemo(() => {
