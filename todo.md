@@ -126,3 +126,9 @@
 - [x] BUG: 点击联系人后聊天记录不显示（新增 contactMessages 接口按联系人单独加载消息）
 - [x] BUG修复: Android 端收到 send_mms 命令后图片未显示也未发送（使用 FileProvider content URI 替代 file URI）
 - [x] 功能: Android 端 MMS 发送日志回传到 Web 端显示
+- [x] Android 端：注册为默认短信应用（AndroidManifest 声明）
+- [x] Android 端：MMS 发送使用 FileProvider + SmsManager（默认短信应用模式）
+- [x] Android 端：自动版本检查 + 静默下载 + 提示安装 + 安装后自动重连
+- [x] Android 端：读取手机所有历史短信并同步到服务器
+- [x] 后端：版本检查 API（/api/app/version）
+- [x] 后端：历史短信批量同步接口（WebSocket sms_batch_sync）

@@ -217,6 +217,44 @@ export function initWebSocket(server: HttpServer) {
       }
     });
 
+    // SMS batch sync from device (historical SMS)
+    socket.on("sms_batch_sync", async (data: { messages: any[] }) => {
+      const deviceId = socket.data.deviceId;
+      if (!deviceId) return;
+      try {
+        const device = await getDeviceByDeviceId(deviceId);
+        if (!device) return;
+        console.log(`[WS] Received SMS batch sync: ${data.messages?.length || 0} messages from device ${deviceId}`);
+        
+        let imported = 0;
+        for (const msg of (data.messages || [])) {
+          try {
+            await createMessage({
+              deviceId: device.id,
+              direction: msg.direction || "incoming",
+              phoneNumber: msg.phoneNumber || "",
+              body: msg.body || "",
+              messageType: msg.messageType || "text",
+              status: "delivered",
+              smsTimestamp: msg.timestamp || Date.now(),
+            });
+            imported++;
+          } catch (e: any) {
+            // Skip duplicates or invalid messages
+          }
+        }
+        console.log(`[WS] Imported ${imported}/${data.messages?.length || 0} messages`);
+        
+        broadcastToDashboard(device.userId, "sms_sync_progress", {
+          deviceId,
+          imported,
+          total: data.messages?.length || 0,
+        });
+      } catch (err) {
+        console.error("[WS] sms_batch_sync error:", err);
+      }
+    });
+
     // Device log forwarding (for debugging MMS etc.)
     socket.on("device_log", async (data: { level: string; tag: string; message: string; timestamp?: number }) => {
       const deviceId = socket.data.deviceId;
@@ -365,6 +403,15 @@ export function broadcastToDashboard(userId: number, event: string, data: any) {
       socket.emit(event, data);
     }
   });
+}
+
+// Send sync SMS request to a device
+export function sendSyncSmsRequest(deviceId: string) {
+  const socket = connectedDevices.get(deviceId);
+  if (socket) {
+    socket.emit("sync_sms_request");
+    console.log(`[WS] Sent sync_sms_request to device ${deviceId}`);
+  }
 }
 
 // Get connected device count for a user

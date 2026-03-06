@@ -70,7 +70,7 @@ import {
   getChatContactsByDeviceId,
   getMessagesByContact,
 } from "./db";
-import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
+import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest } from "./wsManager";
 import { saveFileLocally } from "./_core/index";
 import { storagePut } from "./storage";
 
@@ -1105,6 +1105,23 @@ export const appRouter = router({
           endTime: input.endTime,
           groupId: input.groupId,
         });
+      }),
+  }),
+
+  // ─── Sync SMS from device ───
+  syncSms: router({
+    trigger: protectedProcedure
+      .input(z.object({ deviceId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) {
+          throw new Error("设备不存在");
+        }
+        if (!isDeviceConnected(device.deviceId)) {
+          throw new Error("设备不在线");
+        }
+        sendSyncSmsRequest(device.deviceId);
+        return { success: true, message: "同步请求已发送到设备" };
       }),
   }),
 

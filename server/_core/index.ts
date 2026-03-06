@@ -78,8 +78,20 @@ async function startServer() {
     }
   });
 
+  // App version info
+  const APP_VERSION = "3.2.0";
+  const APK_CDN_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663393087442/4rTHqCojuh9Vnb7GsHmjrf/sms-remote-v3.2_19253a52.zip";
+
+  // Version check API (for auto-update)
+  app.get("/api/app/version", (_req: any, res: any) => {
+    res.json({
+      version: APP_VERSION,
+      downloadUrl: `${_req.protocol}://${_req.get("host")}/api/download/apk`,
+      releaseNotes: "v3.2.0: 默认短信应用支持、MMS修复、自动更新、历史短信同步",
+    });
+  });
+
   // APK download endpoint (redirect to CDN)
-  const APK_CDN_URL = "https://d2xsxph8kpxj0f.cloudfront.net/310519663393087442/4rTHqCojuh9Vnb7GsHmjrf/sms-remote-v3.1_7da8e156.zip";
   app.get("/api/download/apk", (_req: any, res: any) => {
     res.redirect(APK_CDN_URL);
   });
