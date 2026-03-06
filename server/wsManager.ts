@@ -8,6 +8,7 @@ import {
   setDeviceOnline,
   updateDeviceStatus,
   createMessage,
+  getMessageByDedup,
   getDeviceByDeviceId,
   getDevicesByUserId,
   getUserById,
@@ -171,6 +172,13 @@ export function initWebSocket(server: HttpServer) {
         const device = await getDeviceByDeviceId(deviceId);
         if (!device) return;
 
+        // Dedup: skip if same message already exists
+        const existing = await getMessageByDedup(device.id, data.phoneNumber, data.timestamp);
+        if (existing) {
+          console.log(`[WS] Duplicate SMS skipped: device=${deviceId}, phone=${data.phoneNumber}, ts=${data.timestamp}`);
+          return;
+        }
+
         const msg = await createMessage({
           deviceId: device.id,
           direction: "incoming",
@@ -235,6 +243,12 @@ export function initWebSocket(server: HttpServer) {
           try {
             // Skip messages with empty phone numbers
             if (!msg.phoneNumber || msg.phoneNumber.trim() === "") {
+              skipped++;
+              continue;
+            }
+            // Dedup check
+            const existingMsg = await getMessageByDedup(device.id, msg.phoneNumber, msg.timestamp || 0);
+            if (existingMsg) {
               skipped++;
               continue;
             }

@@ -418,6 +418,21 @@ export function normalizePhone(phone: string): string {
   return n;
 }
 
+/** Check if a message with same deviceId + phoneNumber + smsTimestamp already exists (dedup) */
+export async function getMessageByDedup(deviceId: number, phoneNumber: string, smsTimestamp: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const normalized = normalizePhone(phoneNumber);
+  const result = await db.select().from(messages)
+    .where(and(
+      eq(messages.deviceId, deviceId),
+      eq(messages.phoneNumber, normalized),
+      eq(messages.smsTimestamp, smsTimestamp)
+    ))
+    .limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
 export async function createMessage(data: InsertMessage) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
