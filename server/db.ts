@@ -409,91 +409,13 @@ export async function expireOldTokens(userId: number) {
 
 // ─── Message Queries ───
 
-/**
- * Normalize a phone number for storage and comparison.
- * 
- * Strategy: Extract the "significant tail" of the number.
- * The key insight is that the same contact's number always shares
- * the same trailing digits regardless of format:
- *   - 18818818812     -> 18818818812
- *   - +8618818818812  -> 18818818812
- *   - 0962323632      -> 962323632
- *   - +855962323632   -> 962323632
- *   - +14155552671    -> 4155552671
- *   - 004155552671    -> 4155552671
- * 
- * Algorithm:
- * 1. Strip all non-digit characters
- * 2. Remove leading zeros
- * 3. If the result is > 11 digits, it likely has a country code.
- *    Take the last 10 digits as the significant portion.
- *    (Most national numbers are 7-11 digits; 10 covers most cases.)
- *    If <= 11 digits, keep as-is (it's already a local/national number).
- */
+/** Normalize phone number: strip +86, spaces, dashes */
 export function normalizePhone(phone: string): string {
-  // Step 1: Strip everything except digits
-  let digits = phone.replace(/[^0-9]/g, "");
-
-  // Step 2: Remove leading zeros
-  digits = digits.replace(/^0+/, "");
-
-  // Step 3: If too long (has country code), take the significant tail
-  // Most national numbers are 7-11 digits. We keep the last 11 digits max
-  // to preserve the full national number while stripping country codes.
-  if (digits.length > 11) {
-    // Try to detect common patterns:
-    // For numbers like 8618818818812 (13 digits), country code is 86, local is 18818818812 (11 digits)
-    // For numbers like 855962323632 (12 digits), country code is 855, local is 962323632 (9 digits)
-    // For numbers like 14155552671 (11 digits), country code is 1, local is 4155552671 (10 digits)
-    // Strategy: try removing 1, 2, 3 digit country codes and pick the best fit
-    for (let ccLen = 1; ccLen <= 3; ccLen++) {
-      if (digits.length > ccLen) {
-        const tail = digits.substring(ccLen).replace(/^0+/, "");
-        if (tail.length >= 7 && tail.length <= 11) {
-          return tail;
-        }
-      }
-    }
-    // Fallback: just take last 10 digits
-    return digits.slice(-10);
-  }
-
-  return digits;
-}
-
-/**
- * Check if two phone numbers likely belong to the same contact.
- * Compares the trailing N digits (where N = min(len1, len2, 7)).
- * This handles cases where normalizePhone alone might not perfectly strip
- * country codes for unusual number formats.
- */
-export function isSamePhoneNumber(phone1: string, phone2: string): boolean {
-  const n1 = normalizePhone(phone1);
-  const n2 = normalizePhone(phone2);
-  
-  // Exact match after normalization
-  if (n1 === n2) return true;
-  
-  // Tail match: compare the last min(len1, len2, 9) digits
-  const tailLen = Math.min(n1.length, n2.length, 9);
-  if (tailLen < 7) return false; // Too short to reliably compare
-  
-  return n1.slice(-tailLen) === n2.slice(-tailLen);
-}
-
-/** Check if a message with same deviceId + phoneNumber + smsTimestamp already exists (dedup) */
-export async function getMessageByDedup(deviceId: number, phoneNumber: string, smsTimestamp: number) {
-  const db = await getDb();
-  if (!db) return null;
-  const normalized = normalizePhone(phoneNumber);
-  const result = await db.select().from(messages)
-    .where(and(
-      eq(messages.deviceId, deviceId),
-      eq(messages.phoneNumber, normalized),
-      eq(messages.smsTimestamp, smsTimestamp)
-    ))
-    .limit(1);
-  return result.length > 0 ? result[0] : null;
+  let n = phone.replace(/[\s\-()]/g, "");
+  if (n.startsWith("+86")) n = n.slice(3);
+  else if (n.startsWith("0086")) n = n.slice(4);
+  else if (n.startsWith("86") && n.length === 13) n = n.slice(2);
+  return n;
 }
 
 export async function createMessage(data: InsertMessage) {
@@ -808,9 +730,7 @@ export async function importContacts(userId: number, deviceId: number, contacts:
     .where(eq(deviceContacts.deviceId, deviceId));
   const existingSet = new Set(existing.map(e => e.phoneNumber));
 
-  // Normalize phone numbers for comparison
-  const normalizedContacts = contacts.map(c => ({ ...c, phoneNumber: normalizePhone(c.phoneNumber) }));
-  const newContacts = normalizedContacts.filter(c => !existingSet.has(c.phoneNumber));
+  const newContacts = contacts.filter(c => !existingSet.has(c.phoneNumber));
   if (newContacts.length === 0) return 0;
 
   await db.insert(deviceContacts).values(
@@ -1120,11 +1040,10 @@ export async function getMessagesByContact(deviceId: number, phoneNumber: string
   const db = await getDb();
   if (!db) return [];
 
-  const normalized = normalizePhone(phoneNumber);
   return db.select().from(messages)
     .where(and(
       eq(messages.deviceId, deviceId),
-      eq(messages.phoneNumber, normalized)
+      eq(messages.phoneNumber, phoneNumber)
     ))
     .orderBy(desc(messages.smsTimestamp))
     .limit(opts?.limit ?? 500)

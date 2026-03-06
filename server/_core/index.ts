@@ -8,7 +8,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { initMqttBroker, publishToTopic } from "../mqttBroker";
+import { initWebSocket } from "../wsManager";
 import { nanoid } from "nanoid";
 import multer from "multer";
 
@@ -79,15 +79,15 @@ async function startServer() {
   });
 
   // App version info
-  const APP_VERSION = "3.6.0";
-  const APK_CDN_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663393087442/bFlyPQJbrVpHxtpt.apk";
+  const APP_VERSION = "3.4.0";
+  const APK_CDN_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663393087442/fIqMxgTDXkaCTfjv.apk";
 
   // Version check API (for auto-update)
   app.get("/api/app/version", (_req: any, res: any) => {
     res.json({
       version: APP_VERSION,
       downloadUrl: `${_req.protocol}://${_req.get("host")}/api/download/apk`,
-      releaseNotes: "v3.6.0: 纯MQTT协议、修复发送不工作、修复消息方向误报、智能号码归一化、双重去重、水墨UI",
+      releaseNotes: "v3.4.0: 修复收发短信失败问题（优先转发服务器再写入系统数据库）、优化历史短信同步24小时冷却、增强SmsManager兼容性",
     });
   });
 
@@ -117,16 +117,6 @@ async function startServer() {
     }
   });
 
-  // DEBUG: Test endpoint to trigger broker.publish directly
-  app.get("/api/test/send-mqtt", (req: any, res: any) => {
-    const deviceId = req.query.deviceId || 'dev_IHS30MF7o-YTVhE6';
-    const topic = `device/${deviceId}/down/send_sms`;
-    const data = { requestId: 'test_' + Date.now(), phoneNumber: '10086', body: 'test from API' };
-    console.log(`[TEST] Triggering publishToTopic to ${topic}`);
-    publishToTopic(topic, data);
-    res.json({ ok: true, topic, data });
-  });
-
   // tRPC API (includes self-hosted auth routes)
   app.use(
     "/api/trpc",
@@ -136,8 +126,8 @@ async function startServer() {
     })
   );
 
-  // Initialize MQTT Broker (single protocol for all clients)
-  await initMqttBroker(server);
+  // Initialize WebSocket server
+  initWebSocket(server);
 
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {

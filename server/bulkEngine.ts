@@ -10,7 +10,7 @@
  */
 
 import { getBulkTaskById, updateBulkTask, getTemplateById } from "./db";
-import { sendSmsToDevice, broadcastToDashboard, isDeviceConnected } from "./mqttBroker";
+import { sendSmsToDevice, broadcastToDashboard, isDeviceConnected } from "./wsManager";
 import { createMessage, normalizePhone } from "./db";
 import { getDeviceById } from "./db";
 

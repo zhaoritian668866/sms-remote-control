@@ -150,42 +150,11 @@
 - [x] 修复: 手机端作为默认短信应用时收发短信功能恢复正常
 - [x] 编译 v3.4.0 APK 并上传 CDN
 - [x] 部署后端修复到服务器
-- [x] BUG: 电脑端收到重复消息（同一条短信收到两次）
-- [x] 优化: Android 端完全接管手机短信，体验接近原生短信APP
-- [x] 功能: ContentObserver 监听短信数据库变化，实时同步新短信到电脑
-- [x] 功能: 全量历史短信同步（连接前的所有短信都同步到电脑）
-- [x] 功能: 手机端自由收发短信/彩信，与原生短信应用体验一致
-- [x] 优化: 连接稳定性提升（MQTT 协议替代 Socket.IO）
-- [x] 迁移: 后端增加 MQTT Broker（Aedes），保留 Socket.IO 并存
-- [x] 迁移: Web 前端增加 MQTT.js client，优先 MQTT 降级 Socket.IO
-- [x] 迁移: Android 端增加 MqttManager（Paho），优先 MQTT 降级 Socket.IO
-- [x] 修复: 消息去重（服务端 smsTimestamp+phoneNumber+deviceId 去重）
-- [x] 功能: MQTT 持久会话支持离线消息补发
-- [x] BUG: 前端 MQTT 连接报错 "The string did not match the expected pattern"
-- [x] BUG: Vite HMR WebSocket 连接失败（开发环境代理问题，不影响生产）
-- [x] BUG: v3.5.0 配对一直卡住，显示“正在配对”
-- [ ] BUG: v3.5.0 配对仍然不上（第二次排查）
-- [x] BUG: 紧急 - 老版本 2.0 也配对不上了（MQTT 初始化失败导致服务器崩溃）
-- [x] BUG: 配对成功但设备显示离线（统一为纯 MQTT 协议解决）
-- [x] BUG: Dashboard MQTT 连接疯狂断连重连循环（移除 Socket.IO 降级 + clean session）
-- [x] 重构: 统一为纯 MQTT 协议，彻底移除 Socket.IO
-- [x] 重构: 后端 routers.ts 和 bulkEngine.ts 改用 mqttBroker 导出函数
-- [x] 重构: 前端 useSocket.ts 移除 Socket.IO 降级逻辑
-- [x] 重构: 服务器入口移除 initWebSocket 调用
-- [x] 修复: MQTT publishToClient 改为 publishToTopic 确保消息送达
-- [x] 修复: Dashboard MQTT 连接稳定性（clean session + 合理 keepalive）
-- [x] Android v3.6: 移除 Socket.IO，统一为纯 MQTT 协议
-- [x] Android v3.6: 作为原生短信应用（设为默认短信应用、接管短信收发）
-- [x] Android v3.6: 支持发送 MMS 彩信（图片+文字）
-- [x] Android v3.6: 修复消息方向误报（发送的消息不应标记为接收方）
-- [x] Android v3.6: 电话号码归一化（0962323632 = +855962323632 视为同一联系人）
-- [x] Android v3.6: 同步本机所有短信到电脑端
-- [x] Android v3.6: 重构 UI 为水墨侠客风格（与电脑端一致）
-- [x] Android v3.6: 重构 Logo 为水墨风格
-- [x] 电脑端: 支持通过指令发送 MMS 彩信（已有 send_mms 指令）
-- [x] BUG: 偶尔仍会接收到两条一模一样的消息（前后端双重去重修复）
-- [x] 上传 v3.6.0 APK 到 CDN 并更新首页下载链接和版本号
-- [x] BUG: 电脑端能接收短信但发送没反应（已修复）
-- [x] BUG: 电脑端发送短信/彩信没反应（移除 connectedDevices 检查，直接发布到 MQTT topic）
-- [x] BUG: 号码归一化逻辑缺陷（重写为智能尾部数字匹配 + isSamePhoneNumber 辅助判定）
-- [x] BUG: 电脑端发送短信仍然不工作（已验证 broker.publish 正常工作，消息链路完全通畅）
+- [ ] BUG: 电脑端收到重复消息（同一条短信收到两次）
+- [ ] 优化: Android 端完全接管手机短信，体验接近原生短信APP
+- [ ] 优化: 连接稳定性提升（评估 MQTT/HTTP 轮询等替代方案）
+- [ ] 迁移: 后端增加 MQTT Broker（Aedes），保留 Socket.IO 并存
+- [ ] 迁移: Web 前端增加 MQTT.js client，优先 MQTT 降级 Socket.IO
+- [ ] 迁移: Android 端增加 MqttManager（Paho），优先 MQTT 降级 Socket.IO
+- [ ] 修复: 消息去重（服务端 smsTimestamp+phoneNumber+deviceId 去重）
+- [ ] 功能: MQTT 持久会话支持离线消息补发

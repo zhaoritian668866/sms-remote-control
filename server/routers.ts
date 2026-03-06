@@ -70,7 +70,7 @@ import {
   getChatContactsByDeviceId,
   getMessagesByContact,
 } from "./db";
-import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest } from "./mqttBroker";
+import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest } from "./wsManager";
 import { saveFileLocally } from "./_core/index";
 import { storagePut } from "./storage";
 
@@ -242,7 +242,7 @@ export const appRouter = router({
   pairing: router({
     generate: protectedProcedure.mutation(async ({ ctx }) => {
       // Always allow generating pairing token.
-      // The actual quota check happens in mqttBroker during pairing:
+      // The actual quota check happens in wsManager during pairing:
       // - If under quota: creates new device (multi-messenger support)
       // - If at quota: reuses oldest offline device (preserves history)
       // This ensures users can always re-pair even when at quota limit.
