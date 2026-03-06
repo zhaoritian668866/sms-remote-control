@@ -395,21 +395,15 @@ export const appRouter = router({
 
         const phone = normalizePhone(input.phoneNumber);
 
-        // Upload image to S3 for persistent access
+        // Save image to local disk
         const imageBuffer = Buffer.from(input.imageBase64, "base64");
-        const ext = input.mimeType === "image/png" ? "png" : input.mimeType === "image/gif" ? "gif" : "jpg";
-        const fileKey = `mms/${ctx.user.id}/${nanoid(16)}.${ext}`;
-        let imageUrl: string;
-        try {
-          const { url } = await storagePut(fileKey, imageBuffer, input.mimeType);
-          imageUrl = url;
-        } catch (e: any) {
-          // Fallback to local storage if S3 fails
-          console.error("S3 upload failed, falling back to local:", e.message);
-          const urlPath = saveFileLocally(imageBuffer, input.mimeType, `mms/${ctx.user.id}`);
-          const origin = ctx.req.headers.origin || `${ctx.req.protocol}://${ctx.req.get("host")}`;
-          imageUrl = `${origin}${urlPath}`;
-        }
+        console.log(`[MMS] Saving image: ${imageBuffer.length} bytes, type: ${input.mimeType}`);
+        const urlPath = saveFileLocally(imageBuffer, input.mimeType, `mms/${ctx.user.id}`);
+        // Build full URL - use the server's own host, not the frontend origin
+        const host = ctx.req.get("host") || "localhost:3000";
+        const protocol = ctx.req.protocol || "https";
+        const imageUrl = `${protocol}://${host}${urlPath}`;
+        console.log(`[MMS] Image saved, URL: ${imageUrl}`);
 
         const msg = await createMessage({
           deviceId: input.deviceId,
