@@ -189,14 +189,16 @@ export function initWebSocket(server: HttpServer) {
           deviceName: device.name,
         });
 
-        // Notify owner about new SMS
-        try {
-          await notifyOwner({
-            title: `📱 新短信 - ${device.name}`,
-            content: `来自 ${data.contactName || data.phoneNumber} 的短信:\n${data.body}`,
-          });
-        } catch (e) {
-          console.warn("[WS] Failed to notify owner:", e);
+        // Notify owner about new SMS (optional, may not be configured on self-hosted)
+        if (process.env.BUILT_IN_FORGE_API_URL && process.env.BUILT_IN_FORGE_API_KEY) {
+          try {
+            await notifyOwner({
+              title: `📱 新短信 - ${device.name}`,
+              content: `来自 ${data.contactName || data.phoneNumber} 的短信:\n${data.body}`,
+            });
+          } catch (e) {
+            // Silently ignore on self-hosted servers
+          }
         }
       } catch (err) {
         console.error("[WS] sms_received error:", err);
@@ -224,15 +226,22 @@ export function initWebSocket(server: HttpServer) {
       try {
         const device = await getDeviceByDeviceId(deviceId);
         if (!device) return;
-        console.log(`[WS] Received SMS batch sync: ${data.messages?.length || 0} messages from device ${deviceId}`);
+        const msgCount = data.messages?.length || 0;
+        console.log(`[WS] Received SMS batch sync: ${msgCount} messages from device ${deviceId}`);
         
         let imported = 0;
+        let skipped = 0;
         for (const msg of (data.messages || [])) {
           try {
+            // Skip messages with empty phone numbers
+            if (!msg.phoneNumber || msg.phoneNumber.trim() === "") {
+              skipped++;
+              continue;
+            }
             await createMessage({
               deviceId: device.id,
               direction: msg.direction || "incoming",
-              phoneNumber: msg.phoneNumber || "",
+              phoneNumber: msg.phoneNumber,
               body: msg.body || "",
               messageType: msg.messageType || "text",
               status: "delivered",
@@ -240,15 +249,16 @@ export function initWebSocket(server: HttpServer) {
             });
             imported++;
           } catch (e: any) {
+            skipped++;
             // Skip duplicates or invalid messages
           }
         }
-        console.log(`[WS] Imported ${imported}/${data.messages?.length || 0} messages`);
+        console.log(`[WS] Batch sync done: imported=${imported}, skipped=${skipped}, total=${msgCount}`);
         
         broadcastToDashboard(device.userId, "sms_sync_progress", {
           deviceId,
           imported,
-          total: data.messages?.length || 0,
+          total: msgCount,
         });
       } catch (err) {
         console.error("[WS] sms_batch_sync error:", err);
