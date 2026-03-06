@@ -217,6 +217,27 @@ export function initWebSocket(server: HttpServer) {
       }
     });
 
+    // Device log forwarding (for debugging MMS etc.)
+    socket.on("device_log", async (data: { level: string; tag: string; message: string; timestamp?: number }) => {
+      const deviceId = socket.data.deviceId;
+      if (!deviceId) return;
+      try {
+        const device = await getDeviceByDeviceId(deviceId);
+        if (device) {
+          broadcastToDashboard(device.userId, "device_log", {
+            deviceId,
+            deviceName: device.name,
+            level: data.level || "info",
+            tag: data.tag || "Device",
+            message: data.message,
+            timestamp: data.timestamp || Date.now(),
+          });
+        }
+      } catch (err) {
+        console.error("[WS] device_log error:", err);
+      }
+    });
+
     // Device status update
     socket.on("status_update", async (data: { batteryLevel?: number; signalStrength?: number }) => {
       const deviceId = socket.data.deviceId;

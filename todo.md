@@ -119,7 +119,10 @@
 - [x] 图片收发：Android 端支持 MMS 彩信发送和接收
 - [x] 主题切换：增加白色主题，支持黑白主题切换
 - [x] 图片存储改为服务器本地磁盘（去掉 S3 依赖，Express 静态文件服务提供访问）
-- [ ] BUG: 电脑端发图片手机没收到 MMS
-- [ ] BUG: 手机端发图片也发不出去
+- [x] 图片存储改为 S3（确保部署后图片 URL 仍可达，本地磁盘作为 fallback）
+- [x] BUG: 电脑端发图片手机没收到 MMS
+- [x] BUG: 手机端发图片也发不出去
 - [x] BUG: 部分信使聊天页联系人丢失（limit 500 导致，新增独立联系人列表接口修复）
 - [x] BUG: 点击联系人后聊天记录不显示（新增 contactMessages 接口按联系人单独加载消息）
+- [x] BUG修复: Android 端收到 send_mms 命令后图片未显示也未发送（使用 FileProvider content URI 替代 file URI）
+- [x] 功能: Android 端 MMS 发送日志回传到 Web 端显示

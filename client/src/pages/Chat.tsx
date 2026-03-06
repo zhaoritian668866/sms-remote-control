@@ -7,7 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { useDashboardSocket } from "@/hooks/useSocket";
 import {
   ArrowLeft, Send, Loader2, Smartphone, Battery, Signal,
-  Phone, ChevronDown, Search, UserPlus, X, MessageSquare, Pin, PinOff, ImagePlus
+  Phone, ChevronDown, Search, UserPlus, X, MessageSquare, Pin, PinOff, ImagePlus, Terminal
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { toast } from "sonner";
@@ -31,6 +31,9 @@ export default function Chat() {
   const [autoScroll, setAutoScroll] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const [deviceLogs, setDeviceLogs] = useState<Array<{level: string; tag: string; message: string; timestamp: number}>>([])
+  const [showDeviceLogs, setShowDeviceLogs] = useState(false);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   // 进入聊天页时清除该设备未读
   useEffect(() => {
@@ -183,8 +186,23 @@ export default function Chat() {
       }
     });
 
-    return () => { unsub1(); unsub2(); };
-  }, [on, deviceId, selectedContact, refetchMessages, refetchContacts]);
+    const unsub3 = on("device_log", (data: any) => {
+      // Show logs from the current device
+      if (data.deviceId) {
+        const deviceObj = device as any;
+        if (deviceObj && data.deviceId === deviceObj.deviceId) {
+          setDeviceLogs(prev => [...prev.slice(-200), {
+            level: data.level || "info",
+            tag: data.tag || "Device",
+            message: data.message || "",
+            timestamp: data.timestamp || Date.now(),
+          }]);
+        }
+      }
+    });
+
+    return () => { unsub1(); unsub2(); unsub3(); };
+  }, [on, deviceId, selectedContact, refetchMessages, refetchContacts, device]);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -442,6 +460,16 @@ export default function Chat() {
                 )}
               </div>
             </div>
+            <button
+              onClick={() => setShowDeviceLogs(v => !v)}
+              className={`p-1.5 rounded transition-colors ${showDeviceLogs ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground/50 hover:text-foreground'}`}
+              title="设备日志"
+            >
+              <Terminal className="w-3.5 h-3.5" />
+              {deviceLogs.length > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full" />
+              )}
+            </button>
           </div>
 
           {/* 搜索栏 */}
@@ -731,8 +759,17 @@ export default function Chat() {
                                 src={msg.imageUrl}
                                 alt="图片消息"
                                 className="max-w-[200px] max-h-[200px] rounded cursor-pointer hover:opacity-80 transition-opacity"
-                                onClick={() => setPreviewImage(msg.imageUrl)}
+                                onClick={() => setPreviewImage(msg.imageUrl!)}
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const fallback = target.nextElementSibling as HTMLElement;
+                                  if (fallback) fallback.style.display = 'flex';
+                                }}
                               />
+                              <div className="hidden items-center justify-center w-[200px] h-[100px] bg-foreground/5 rounded text-muted-foreground/40 text-xs">
+                                图片加载失败
+                              </div>
                               {msg.body && msg.body !== "[图片]" && (
                                 <p>{msg.body}</p>
                               )}
@@ -841,6 +878,34 @@ export default function Chat() {
           </div>
         </div>
       </div>
+      {/* 设备日志面板 */}
+      {showDeviceLogs && (
+        <div className="fixed bottom-0 right-0 w-[480px] h-[320px] z-40 bg-card border border-foreground/15 shadow-2xl flex flex-col" style={{borderRadius: '8px 0 0 0'}}>
+          <div className="flex items-center justify-between px-3 py-2 border-b border-foreground/10 bg-foreground/5">
+            <div className="flex items-center gap-2">
+              <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-xs font-serif text-foreground">设备日志</span>
+              <span className="text-xs text-muted-foreground">({deviceLogs.length})</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setDeviceLogs([])} className="text-xs text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded hover:bg-foreground/5">清空</button>
+              <button onClick={() => setShowDeviceLogs(false)} className="p-1 text-muted-foreground hover:text-foreground"><X className="w-3.5 h-3.5" /></button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 font-mono text-xs space-y-0.5">
+            {deviceLogs.length === 0 ? (
+              <div className="text-center text-muted-foreground/50 py-8">等待设备日志...</div>
+            ) : deviceLogs.map((log, i) => (
+              <div key={i} className={`flex gap-1.5 ${log.level === 'error' ? 'text-red-400' : log.level === 'warn' ? 'text-yellow-400' : 'text-foreground/70'}`}>
+                <span className="text-muted-foreground/40 shrink-0">{new Date(log.timestamp).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span>
+                <span className="shrink-0 text-muted-foreground/60">[{log.tag}]</span>
+                <span className="break-all">{log.message}</span>
+              </div>
+            ))}
+            <div ref={logsEndRef} />
+          </div>
+        </div>
+      )}
       {/* 图片预览模态框 */}
       {previewImage && (
         <div

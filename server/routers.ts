@@ -72,6 +72,7 @@ import {
 } from "./db";
 import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard } from "./wsManager";
 import { saveFileLocally } from "./_core/index";
+import { storagePut } from "./storage";
 
 export const appRouter = router({
   system: systemRouter,
@@ -394,12 +395,21 @@ export const appRouter = router({
 
         const phone = normalizePhone(input.phoneNumber);
 
-        // Save image to local disk
+        // Upload image to S3 for persistent access
         const imageBuffer = Buffer.from(input.imageBase64, "base64");
-        const urlPath = saveFileLocally(imageBuffer, input.mimeType, `mms/${ctx.user.id}`);
-        // Build full URL from request origin
-        const origin = ctx.req.headers.origin || `${ctx.req.protocol}://${ctx.req.get("host")}`;
-        const imageUrl = `${origin}${urlPath}`;
+        const ext = input.mimeType === "image/png" ? "png" : input.mimeType === "image/gif" ? "gif" : "jpg";
+        const fileKey = `mms/${ctx.user.id}/${nanoid(16)}.${ext}`;
+        let imageUrl: string;
+        try {
+          const { url } = await storagePut(fileKey, imageBuffer, input.mimeType);
+          imageUrl = url;
+        } catch (e: any) {
+          // Fallback to local storage if S3 fails
+          console.error("S3 upload failed, falling back to local:", e.message);
+          const urlPath = saveFileLocally(imageBuffer, input.mimeType, `mms/${ctx.user.id}`);
+          const origin = ctx.req.headers.origin || `${ctx.req.protocol}://${ctx.req.get("host")}`;
+          imageUrl = `${origin}${urlPath}`;
+        }
 
         const msg = await createMessage({
           deviceId: input.deviceId,
