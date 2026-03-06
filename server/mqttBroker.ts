@@ -149,6 +149,9 @@ async function handleDeviceMessage(clientId: string, topicDeviceId: string, acti
     case "sms_received":
       await handleSmsReceived(clientId, data);
       break;
+    case "sms_sent":
+      await handleSmsSent(clientId, data);
+      break;
     case "sms_send_result":
       handleSmsSendResult(data);
       break;
@@ -291,7 +294,7 @@ function handleHeartbeat(clientId: string, topicDeviceId: string) {
 }
 
 // ─── SMS Received (with dedup) ───
-async function handleSmsReceived(clientId: string, data: { phoneNumber: string; contactName?: string; body: string; timestamp: number; messageType?: string; imageUrl?: string }) {
+async function handleSmsReceived(clientId: string, data: { phoneNumber: string; contactName?: string; body: string; timestamp: number; messageType?: string; imageUrl?: string; direction?: string }) {
   const deviceId = deviceClientMap.get(clientId);
   if (!deviceId) return;
 
@@ -306,15 +309,19 @@ async function handleSmsReceived(clientId: string, data: { phoneNumber: string; 
       return;
     }
 
+    // Use direction from client if provided, default to "incoming"
+    const direction = data.direction === "outgoing" ? "outgoing" : "incoming";
+    const status = direction === "incoming" ? "received" : "delivered";
+
     const msg = await createMessage({
       deviceId: device.id,
-      direction: "incoming",
+      direction,
       phoneNumber: data.phoneNumber,
       contactName: data.contactName || null,
       body: data.body || (data.messageType === "image" ? "[图片]" : ""),
       messageType: (data.messageType as "text" | "image") || "text",
       imageUrl: data.imageUrl || null,
-      status: "received",
+      status,
       smsTimestamp: data.timestamp,
     });
 
@@ -337,6 +344,43 @@ async function handleSmsReceived(clientId: string, data: { phoneNumber: string; 
     }
   } catch (err) {
     console.error("[MQTT] sms_received error:", err);
+  }
+}
+
+// ─── SMS Sent (outgoing from phone, not web command) ───
+async function handleSmsSent(clientId: string, data: { phoneNumber: string; contactName?: string; body: string; timestamp: number; direction?: string }) {
+  const deviceId = deviceClientMap.get(clientId);
+  if (!deviceId) return;
+
+  try {
+    const device = await getDeviceByDeviceId(deviceId);
+    if (!device) return;
+
+    // Dedup: check if message with same deviceId + phoneNumber + timestamp already exists
+    const existing = await getMessageByDedup(device.id, data.phoneNumber, data.timestamp);
+    if (existing) {
+      console.log(`[MQTT] Duplicate sent SMS skipped: device=${deviceId}, phone=${data.phoneNumber}, ts=${data.timestamp}`);
+      return;
+    }
+
+    const msg = await createMessage({
+      deviceId: device.id,
+      direction: "outgoing",
+      phoneNumber: data.phoneNumber,
+      contactName: data.contactName || null,
+      body: data.body || "",
+      messageType: "text",
+      status: "delivered",
+      smsTimestamp: data.timestamp,
+    });
+
+    publishToDashboard(device.userId, "new_sms", {
+      message: msg,
+      deviceId,
+      deviceName: device.name,
+    });
+  } catch (err) {
+    console.error("[MQTT] sms_sent error:", err);
   }
 }
 

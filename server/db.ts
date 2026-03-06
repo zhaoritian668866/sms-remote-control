@@ -409,13 +409,62 @@ export async function expireOldTokens(userId: number) {
 
 // ─── Message Queries ───
 
-/** Normalize phone number: strip +86, spaces, dashes */
+/**
+ * Normalize phone number for storage and comparison.
+ * Handles international format (+855962323632) and local format (0962323632)
+ * so they resolve to the same canonical form.
+ *
+ * Strategy:
+ * 1. Strip all non-digit characters (except leading +)
+ * 2. If starts with +, remove + and strip country code
+ * 3. Remove leading zeros
+ * Result: pure local digits, e.g. "962323632"
+ *
+ * Examples:
+ *   +8618818818812 -> 18818818812
+ *   18818818812    -> 18818818812
+ *   +855962323632  -> 962323632
+ *   0962323632     -> 962323632
+ *   +14155552671   -> 4155552671
+ */
 export function normalizePhone(phone: string): string {
+  // Strip spaces, dashes, parens
   let n = phone.replace(/[\s\-()]/g, "");
-  if (n.startsWith("+86")) n = n.slice(3);
-  else if (n.startsWith("0086")) n = n.slice(4);
-  else if (n.startsWith("86") && n.length === 13) n = n.slice(2);
+
+  // Handle + prefix: strip country code
+  if (n.startsWith("+")) {
+    n = n.substring(1);
+    n = stripCountryCode(n);
+  } else if (n.startsWith("00")) {
+    // International dialing prefix (00XX...)
+    n = n.substring(2);
+    n = stripCountryCode(n);
+  }
+
+  // Remove leading zeros (local format)
+  n = n.replace(/^0+/, "");
+
   return n;
+}
+
+/**
+ * Strip country code from a digit string.
+ * Tries 1, 2, 3 digit prefixes and picks the one that leaves
+ * a reasonable local number (7-11 digits).
+ */
+function stripCountryCode(digits: string): string {
+  if (digits.length <= 11) return digits;
+
+  for (let prefixLen = 1; prefixLen <= 3; prefixLen++) {
+    if (digits.length > prefixLen) {
+      const local = digits.substring(prefixLen);
+      if (local.length >= 7 && local.length <= 11) {
+        return local.replace(/^0+/, "");
+      }
+    }
+  }
+  // Fallback: return as-is
+  return digits;
 }
 
 /** Check if a message with same deviceId + phoneNumber + smsTimestamp already exists (dedup) */
