@@ -423,6 +423,26 @@ export async function createMessage(data: InsertMessage) {
   if (!db) throw new Error("Database not available");
   // Normalize phone number before saving
   const normalized = { ...data, phoneNumber: normalizePhone(data.phoneNumber) };
+  
+  // Dedup: check if a message with same deviceId + phoneNumber + smsTimestamp + direction already exists
+  // This prevents duplicate messages from Android sending both SMS_RECEIVED and SMS_DELIVER broadcasts
+  const existing = await db.select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.deviceId, normalized.deviceId),
+        eq(messages.phoneNumber, normalized.phoneNumber),
+        eq(messages.smsTimestamp, normalized.smsTimestamp),
+        eq(messages.direction, normalized.direction)
+      )
+    )
+    .limit(1);
+  
+  if (existing.length > 0) {
+    console.log(`[DB] Dedup: skipping duplicate message (deviceId=${normalized.deviceId}, phone=${normalized.phoneNumber}, ts=${normalized.smsTimestamp}, dir=${normalized.direction})`);
+    return { id: existing[0].id, ...normalized };
+  }
+  
   const result = await db.insert(messages).values(normalized);
   return { id: Number(result[0].insertId), ...normalized };
 }

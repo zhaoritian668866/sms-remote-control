@@ -159,3 +159,10 @@
 - [ ] 修复: 消息去重（服务端 smsTimestamp+phoneNumber+deviceId 去重）
 - [ ] 功能: MQTT 持久会话支持离线消息补发
 - [x] 回滚到 v2.0 稳定版（Socket.IO 协议），Aedes MQTT 协议导致 Android 端无法可靠接收 send_sms 指令
+- [ ] 在 v2.0 APK 基础上加入默认短信应用声明
+- [ ] 在 v2.0 APK 基础上加入 MMS 彩信发送功能
+- [ ] 编译新版 APK（v2.1.0）
+- [ ] 确保服务端 v2.0 支持 send_mms 指令
+- [ ] 生成新的水墨古风精致 Logo
+- [ ] 重新设计 APP 界面（水墨古风更精致风格）
+- [ ] BUG: 收到的短信重复显示（每条消息出现两遍）- 需排查根因
