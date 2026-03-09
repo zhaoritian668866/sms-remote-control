@@ -257,6 +257,7 @@ export function initWebSocket(server: HttpServer) {
         
         broadcastToDashboard(device.userId, "sms_sync_progress", {
           deviceId,
+          numericDeviceId: device.id,
           imported,
           total: msgCount,
         });

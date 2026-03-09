@@ -168,6 +168,8 @@ export function useDashboardSocket(userId: number | undefined) {
       "new_sms",
       "sms_status_update",
       "bulk_progress",
+      "sms_sync_progress",
+      "device_log",
     ];
 
     events.forEach((event) => {

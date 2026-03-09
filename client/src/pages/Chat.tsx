@@ -104,23 +104,32 @@ export default function Chat() {
   };
 
   // 同步历史短信
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncSmsMutation = trpc.syncSms.trigger.useMutation({
     onSuccess: (data) => {
-      toast.success(data.message || "同步请求已发送");
+      toast.success(data.message || "同步请求已发送，等待手机端响应...");
       setSyncingHistory(true);
-      // 30秒后自动刷新联系人和消息列表
-      setTimeout(() => {
+      // 安全超时：60秒后如果还没收到 sms_sync_progress，自动停止旋转并刷新
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = setTimeout(() => {
+        setSyncingHistory(false);
         refetchContacts();
         refetchMessages();
-        setSyncingHistory(false);
-        toast.success("历史短信同步完成，列表已刷新");
-      }, 15000);
+      }, 60000);
     },
     onError: (err) => {
       toast.error("同步失败：" + err.message);
       setSyncingHistory(false);
     },
   });
+
+  // 当收到 sms_sync_progress 时清除超时定时器
+  useEffect(() => {
+    if (!syncingHistory && syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = null;
+    }
+  }, [syncingHistory]);
 
   const handleSyncHistory = () => {
     if (!device?.isOnline) {
@@ -194,7 +203,21 @@ export default function Chat() {
   };
 
   // WebSocket 实时消息
-  const { on } = useDashboardSocket(user?.id);
+  const { on, isConnected } = useDashboardSocket(user?.id);
+
+  // WebSocket 重连后自动刷新消息和联系人列表（补发丢失的消息）
+  const prevConnectedRef = useRef(false);
+  useEffect(() => {
+    if (isConnected && !prevConnectedRef.current && deviceId > 0) {
+      // 从断开到重新连接，自动刷新数据
+      console.log("[Chat] WebSocket reconnected, refreshing data...");
+      refetchContacts();
+      if (selectedContact) {
+        refetchMessages();
+      }
+    }
+    prevConnectedRef.current = isConnected;
+  }, [isConnected, deviceId, selectedContact, refetchContacts, refetchMessages]);
 
   useEffect(() => {
     const unsub1 = on("new_sms", (data: any) => {
@@ -230,7 +253,22 @@ export default function Chat() {
       }
     });
 
-    return () => { unsub1(); unsub2(); unsub3(); };
+    // 监听历史短信同步进度
+    const unsub4 = on("sms_sync_progress", (data: any) => {
+      // deviceId 可能是 string ("dev_xxx") 或 numericDeviceId 是 int
+      const matchesDevice = 
+        data.numericDeviceId === deviceId || 
+        data.deviceId === (device as any)?.deviceId ||
+        data.deviceId === String(deviceId);
+      if (matchesDevice) {
+        setSyncingHistory(false);
+        refetchContacts();
+        refetchMessages();
+        toast.success(`历史短信同步完成：导入 ${data.imported || 0} 条，共 ${data.total || 0} 条`);
+      }
+    });
+
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
   }, [on, deviceId, selectedContact, refetchMessages, refetchContacts, device]);
 
   // 自动滚动到底部
