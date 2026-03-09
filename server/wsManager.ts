@@ -163,7 +163,7 @@ export function initWebSocket(server: HttpServer) {
     });
 
     // Incoming SMS from device (supports text and image/MMS)
-    socket.on("sms_received", async (data: { phoneNumber: string; contactName?: string; body: string; timestamp: number; messageType?: string; imageUrl?: string }) => {
+    socket.on("sms_received", async (data: { phoneNumber: string; contactName?: string; body: string; timestamp: number; messageType?: string; imageUrl?: string; direction?: string }) => {
       const deviceId = socket.data.deviceId;
       if (!deviceId) return;
 
@@ -173,13 +173,13 @@ export function initWebSocket(server: HttpServer) {
 
         const msg = await createMessage({
           deviceId: device.id,
-          direction: "incoming",
+          direction: data.direction === "sent" ? "outgoing" : "incoming",
           phoneNumber: data.phoneNumber,
           contactName: data.contactName || null,
           body: data.body || (data.messageType === "image" ? "[图片]" : ""),
           messageType: (data.messageType as "text" | "image") || "text",
           imageUrl: data.imageUrl || null,
-          status: "received",
+          status: data.direction === "sent" ? "sent" : "received",
           smsTimestamp: data.timestamp,
         });
 
