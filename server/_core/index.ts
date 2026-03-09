@@ -79,15 +79,15 @@ async function startServer() {
   });
 
   // App version info
-  const APP_VERSION = "3.4.0";
-  const APK_CDN_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663393087442/fIqMxgTDXkaCTfjv.apk";
+  const APP_VERSION = "2.3.0";
+  const APK_CDN_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663393087442/FkhceXbzqseUwuee.apk";
 
   // Version check API (for auto-update)
   app.get("/api/app/version", (_req: any, res: any) => {
     res.json({
       version: APP_VERSION,
       downloadUrl: `${_req.protocol}://${_req.get("host")}/api/download/apk`,
-      releaseNotes: "v3.4.0: 修复收发短信失败问题（优先转发服务器再写入系统数据库）、优化历史短信同步24小时冷却、增强SmsManager兼容性",
+      releaseNotes: "v2.3.0: 双向实时同步、收件箱实时刷新、图片发送按钮、全局ContentObserver兜底",
     });
   });
 
