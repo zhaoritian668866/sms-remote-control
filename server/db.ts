@@ -1096,3 +1096,107 @@ export async function getMessagesByContact(deviceId: number, phoneNumber: string
     .limit(opts?.limit ?? 500)
     .offset(opts?.offset ?? 0);
 }
+
+
+// ─── Chat Records: Get contacts with messages in a date range ───
+export async function getChatContactsByDeviceIdAndDate(deviceId: number, startTime: number, endTime: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const result = await db.select({
+    phoneNumber: messages.phoneNumber,
+    contactName: sql<string>`MAX(${messages.contactName})`.as("contactName"),
+    lastMessage: sql<string>`SUBSTRING(MAX(CONCAT(LPAD(${messages.smsTimestamp}, 20, '0'), ${messages.body})), 21)`.as("lastMessage"),
+    lastTime: sql<number>`MAX(${messages.smsTimestamp})`.as("lastTime"),
+    totalMessages: sql<number>`COUNT(*)`.as("totalMessages"),
+    incomingCount: sql<number>`SUM(CASE WHEN ${messages.direction} = 'incoming' THEN 1 ELSE 0 END)`.as("incomingCount"),
+    outgoingCount: sql<number>`SUM(CASE WHEN ${messages.direction} = 'outgoing' THEN 1 ELSE 0 END)`.as("outgoingCount"),
+  })
+    .from(messages)
+    .where(and(
+      eq(messages.deviceId, deviceId),
+      gte(messages.smsTimestamp, startTime),
+      lte(messages.smsTimestamp, endTime)
+    ))
+    .groupBy(messages.phoneNumber)
+    .orderBy(sql`MAX(${messages.smsTimestamp}) DESC`);
+  return result.map(r => ({
+    phoneNumber: r.phoneNumber,
+    contactName: r.contactName || null,
+    lastMessage: r.lastMessage ? (r.lastMessage.length > 30 ? r.lastMessage.slice(0, 30) + "..." : r.lastMessage) : "",
+    lastTime: r.lastTime,
+    totalMessages: Number(r.totalMessages),
+    incomingCount: Number(r.incomingCount),
+    outgoingCount: Number(r.outgoingCount),
+    hasReplied: Number(r.incomingCount) > 0,
+  }));
+}
+
+// ─── Chat Records: Get messages for a contact within a date range ───
+export async function getMessagesByContactAndDate(deviceId: number, phoneNumber: string, startTime: number, endTime: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(messages)
+    .where(and(
+      eq(messages.deviceId, deviceId),
+      eq(messages.phoneNumber, phoneNumber),
+      gte(messages.smsTimestamp, startTime),
+      lte(messages.smsTimestamp, endTime)
+    ))
+    .orderBy(asc(messages.smsTimestamp))
+    .limit(2000);
+}
+
+// ─── Chat Records: Get all devices visible to a role ───
+export async function getDevicesForChatRecords(userId: number, role: string, groupId: number | null) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  if (role === "superadmin" || role === "auditor") {
+    // Can see all devices across all groups
+    const allDevices = await db.select({
+      id: devices.id,
+      deviceId: devices.deviceId,
+      name: devices.name,
+      phoneNumber: devices.phoneNumber,
+      userId: devices.userId,
+    }).from(devices).orderBy(desc(devices.createdAt));
+    
+    // Enrich with owner info and group info
+    const result = [];
+    for (const d of allDevices) {
+      const owner = await getUserById(d.userId);
+      let groupName = "未分组";
+      if (owner?.groupId) {
+        const group = await getGroupById(owner.groupId);
+        groupName = group?.name || "未知分组";
+      }
+      result.push({
+        ...d,
+        ownerName: owner?.name || owner?.username || "未知",
+        groupName,
+        groupId: owner?.groupId || null,
+      });
+    }
+    return result;
+  } else if (role === "admin") {
+    // Can see devices in their group
+    if (!groupId) return [];
+    const groupDevices = await getDevicesByGroupId(groupId);
+    const result = [];
+    for (const d of groupDevices) {
+      const owner = await getUserById(d.userId);
+      result.push({
+        id: d.id,
+        deviceId: d.deviceId,
+        name: d.name,
+        phoneNumber: d.phoneNumber,
+        userId: d.userId,
+        ownerName: owner?.name || owner?.username || "未知",
+        groupName: "",
+        groupId,
+      });
+    }
+    return result;
+  }
+  return [];
+}

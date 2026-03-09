@@ -22,7 +22,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useUnreadCounts } from "@/hooks/useUnread";
-import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft, Crown, Building2, FileDown, FileText, Zap, Eye, BarChart3, Sun, Moon } from "lucide-react";
+import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft, Crown, Building2, FileDown, FileText, Zap, Eye, BarChart3, Sun, Moon, ScrollText } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -140,6 +140,7 @@ function DashboardLayoutContent({
 
   const menuItems = isAuditor ? [
     { icon: Eye, label: "审计台", path: "/auditor" },
+    { icon: ScrollText, label: "聊天记录", path: "/chat-records" },
     { icon: BarChart3, label: "统计", path: "/stats" },
   ] : [
     { icon: LayoutDashboard, label: "总堂", path: "/" },
@@ -148,6 +149,7 @@ function DashboardLayoutContent({
     { icon: History, label: "卷宗", path: "/history" },
     ...(user?.role === "superadmin" ? [{ icon: Crown, label: "总后台", path: "/admin" }] : []),
     ...(user?.role === "admin" ? [{ icon: Building2, label: "子后台", path: "/sub-admin" }] : []),
+    ...((user?.role === "admin" || user?.role === "superadmin") ? [{ icon: ScrollText, label: "聊天记录", path: "/chat-records" }] : []),
     { icon: FileText, label: "信笺", path: "/templates" },
     { icon: Zap, label: "群发", path: "/bulk-send" },
     { icon: FileDown, label: "导出", path: "/export" },

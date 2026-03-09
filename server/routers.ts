@@ -69,6 +69,9 @@ import {
   getAllDeviceStats,
   getChatContactsByDeviceId,
   getMessagesByContact,
+  getChatContactsByDeviceIdAndDate,
+  getMessagesByContactAndDate,
+  getDevicesForChatRecords,
 } from "./db";
 import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest } from "./wsManager";
 import { saveFileLocally } from "./_core/index";
@@ -1108,6 +1111,61 @@ export const appRouter = router({
       }),
   }),
 
+  // ─── Chat Records (admin/superadmin/auditor view) ───
+  chatRecords: router({
+    // Get devices visible to the current user based on role
+    devices: protectedProcedure.query(async ({ ctx }) => {
+      const role = ctx.user.role;
+      if (role !== "admin" && role !== "superadmin" && role !== "auditor") {
+        throw new Error("无权访问聊天记录查看功能");
+      }
+      return getDevicesForChatRecords(ctx.user.id, role, ctx.user.groupId);
+    }),
+    // Get contacts for a device within a date range
+    contacts: protectedProcedure
+      .input(z.object({
+        deviceId: z.number(),
+        startTime: z.number(),
+        endTime: z.number(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const role = ctx.user.role;
+        if (role !== "admin" && role !== "superadmin" && role !== "auditor") {
+          throw new Error("无权访问");
+        }
+        // Verify device access
+        const device = await getDeviceById(input.deviceId);
+        if (!device) throw new Error("设备不存在");
+        if (role === "admin") {
+          // Admin can only see devices in their group
+          const owner = await getUserById(device.userId);
+          if (!owner || owner.groupId !== ctx.user.groupId) throw new Error("无权访问该设备");
+        }
+        return getChatContactsByDeviceIdAndDate(input.deviceId, input.startTime, input.endTime);
+      }),
+    // Get messages for a specific contact within a date range
+    messages: protectedProcedure
+      .input(z.object({
+        deviceId: z.number(),
+        phoneNumber: z.string().min(1),
+        startTime: z.number(),
+        endTime: z.number(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const role = ctx.user.role;
+        if (role !== "admin" && role !== "superadmin" && role !== "auditor") {
+          throw new Error("无权访问");
+        }
+        // Verify device access
+        const device = await getDeviceById(input.deviceId);
+        if (!device) throw new Error("设备不存在");
+        if (role === "admin") {
+          const owner = await getUserById(device.userId);
+          if (!owner || owner.groupId !== ctx.user.groupId) throw new Error("无权访问该设备");
+        }
+        return getMessagesByContactAndDate(input.deviceId, input.phoneNumber, input.startTime, input.endTime);
+      }),
+  }),
   // ─── Sync SMS from device ───
   syncSms: router({
     trigger: protectedProcedure
