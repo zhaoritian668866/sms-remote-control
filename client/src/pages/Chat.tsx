@@ -7,7 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { useDashboardSocket } from "@/hooks/useSocket";
 import {
   ArrowLeft, Send, Loader2, Smartphone, Battery, Signal,
-  Phone, ChevronDown, Search, UserPlus, X, MessageSquare, Pin, PinOff, ImagePlus, Terminal
+  Phone, ChevronDown, Search, UserPlus, X, MessageSquare, Pin, PinOff, ImagePlus, Terminal, RefreshCw
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { toast } from "sonner";
@@ -34,6 +34,7 @@ export default function Chat() {
   const [deviceLogs, setDeviceLogs] = useState<Array<{level: string; tag: string; message: string; timestamp: number}>>([])
   const [showDeviceLogs, setShowDeviceLogs] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const [syncingHistory, setSyncingHistory] = useState(false);
 
   // 进入聊天页时清除该设备未读
   useEffect(() => {
@@ -100,6 +101,34 @@ export default function Chat() {
     } else {
       pinMutation.mutate({ deviceId, phoneNumber });
     }
+  };
+
+  // 同步历史短信
+  const syncSmsMutation = trpc.syncSms.trigger.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message || "同步请求已发送");
+      setSyncingHistory(true);
+      // 30秒后自动刷新联系人和消息列表
+      setTimeout(() => {
+        refetchContacts();
+        refetchMessages();
+        setSyncingHistory(false);
+        toast.success("历史短信同步完成，列表已刷新");
+      }, 15000);
+    },
+    onError: (err) => {
+      toast.error("同步失败：" + err.message);
+      setSyncingHistory(false);
+    },
+  });
+
+  const handleSyncHistory = () => {
+    if (!device?.isOnline) {
+      toast.error("设备不在线，无法同步");
+      return;
+    }
+    setSyncingHistory(true);
+    syncSmsMutation.mutate({ deviceId });
   };
 
   // 发送短信
@@ -460,6 +489,14 @@ export default function Chat() {
                 )}
               </div>
             </div>
+            <button
+              onClick={handleSyncHistory}
+              disabled={syncingHistory || syncSmsMutation.isPending}
+              className={`p-1.5 rounded transition-colors ${syncingHistory ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground/50 hover:text-foreground'} disabled:opacity-50`}
+              title="同步历史短信"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncingHistory ? 'animate-spin' : ''}`} />
+            </button>
             <button
               onClick={() => setShowDeviceLogs(v => !v)}
               className={`p-1.5 rounded transition-colors ${showDeviceLogs ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground/50 hover:text-foreground'}`}
