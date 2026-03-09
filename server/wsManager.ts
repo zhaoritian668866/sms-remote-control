@@ -20,6 +20,11 @@ const connectedDevices = new Map<string, Socket>(); // deviceId -> socket
 const dashboardClients = new Map<string, Socket>(); // sessionId -> socket
 const pendingSmsSends = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void; timer: NodeJS.Timeout }>();
 
+// SMS send dedup: prevent sending the same SMS twice to the same device
+// Key: "deviceId:phoneNumber:bodyHash" -> timestamp of last send
+const recentSmsSends = new Map<string, number>();
+const SMS_DEDUP_WINDOW = 10_000; // 10 seconds dedup window
+
 let io: Server;
 
 export function initWebSocket(server: HttpServer) {
@@ -356,6 +361,24 @@ export async function sendSmsToDevice(deviceId: string, phoneNumber: string, bod
   const socket = connectedDevices.get(deviceId);
   if (!socket) {
     return { success: false, error: "Device not connected" };
+  }
+
+  // Dedup: prevent sending the same SMS content to the same number within 10 seconds
+  const dedupKey = `${deviceId}:${phoneNumber}:${body}`;
+  const lastSendTime = recentSmsSends.get(dedupKey);
+  const now = Date.now();
+  if (lastSendTime && now - lastSendTime < SMS_DEDUP_WINDOW) {
+    console.log(`[WS] Duplicate SMS send blocked: ${phoneNumber} (within ${SMS_DEDUP_WINDOW/1000}s window)`);
+    return { success: true }; // Return success to avoid error on frontend, but don't actually send
+  }
+  recentSmsSends.set(dedupKey, now);
+  // Clean up old entries periodically
+  if (recentSmsSends.size > 500) {
+    const keysToDelete: string[] = [];
+    recentSmsSends.forEach((ts, key) => {
+      if (now - ts > SMS_DEDUP_WINDOW) keysToDelete.push(key);
+    });
+    keysToDelete.forEach(k => recentSmsSends.delete(k));
   }
 
   const requestId = nanoid(12);
