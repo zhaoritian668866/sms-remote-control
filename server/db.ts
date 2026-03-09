@@ -424,7 +424,7 @@ export async function createMessage(data: InsertMessage) {
   // Normalize phone number before saving
   const normalized = { ...data, phoneNumber: normalizePhone(data.phoneNumber) };
   
-  // Dedup: check if a message with same deviceId + phoneNumber + smsTimestamp + direction already exists
+  // Dedup strategy 1: Exact match on deviceId + phoneNumber + smsTimestamp + direction
   // This prevents duplicate messages from Android sending both SMS_RECEIVED and SMS_DELIVER broadcasts
   const existing = await db.select({ id: messages.id })
     .from(messages)
@@ -439,8 +439,35 @@ export async function createMessage(data: InsertMessage) {
     .limit(1);
   
   if (existing.length > 0) {
-    console.log(`[DB] Dedup: skipping duplicate message (deviceId=${normalized.deviceId}, phone=${normalized.phoneNumber}, ts=${normalized.smsTimestamp}, dir=${normalized.direction})`);
+    console.log(`[DB] Dedup: skipping duplicate message (exact ts match, deviceId=${normalized.deviceId}, phone=${normalized.phoneNumber}, ts=${normalized.smsTimestamp}, dir=${normalized.direction})`);
     return { id: existing[0].id, ...normalized };
+  }
+
+  // Dedup strategy 2: For outgoing/incoming messages, check if same device + phone + body exists within 30s window
+  // This catches duplicates from ContentObserver re-reporting messages that were already created by sendSms route
+  // (timestamps differ slightly because server creates msg before phone actually sends it)
+  if (normalized.body && normalized.body.length > 0 && normalized.body !== "[图片]") {
+    const timeWindow = 30_000; // 30 seconds
+    const tsMin = normalized.smsTimestamp - timeWindow;
+    const tsMax = normalized.smsTimestamp + timeWindow;
+    const bodyDedup = await db.select({ id: messages.id })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.deviceId, normalized.deviceId),
+          eq(messages.phoneNumber, normalized.phoneNumber),
+          eq(messages.direction, normalized.direction),
+          eq(messages.body, normalized.body),
+          gte(messages.smsTimestamp, tsMin),
+          lte(messages.smsTimestamp, tsMax)
+        )
+      )
+      .limit(1);
+    
+    if (bodyDedup.length > 0) {
+      console.log(`[DB] Dedup: skipping duplicate message (body+window match, deviceId=${normalized.deviceId}, phone=${normalized.phoneNumber}, body=${normalized.body.substring(0, 20)}...)`);
+      return { id: bodyDedup[0].id, ...normalized };
+    }
   }
   
   const result = await db.insert(messages).values(normalized);
