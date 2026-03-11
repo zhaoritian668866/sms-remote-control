@@ -61,6 +61,8 @@ export const devices = mysqlTable("devices", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
   deviceId: varchar("deviceId", { length: 64 }).notNull().unique(),
+  /** Hardware fingerprint (e.g. Android ID) for identifying the same physical phone across re-pairings */
+  hardwareId: varchar("hardwareId", { length: 128 }),
   name: varchar("name", { length: 128 }).notNull(),
   phoneModel: varchar("phoneModel", { length: 128 }),
   androidVersion: varchar("androidVersion", { length: 32 }),

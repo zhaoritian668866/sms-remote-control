@@ -85,6 +85,13 @@
       "when": 1773236451005,
       "tag": "0011_lyrical_blonde_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1773237531662,
+      "tag": "0012_sparkling_paibok",
+      "breakpoints": true
     }
   ]
 }

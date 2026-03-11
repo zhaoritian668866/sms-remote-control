@@ -9,6 +9,7 @@ import {
   updateDeviceStatus,
   createMessage,
   getDeviceByDeviceId,
+  getDeviceByHardwareId,
   getDevicesByUserId,
   getUserById,
   updateDevice,
@@ -70,19 +71,52 @@ export function initWebSocket(server: HttpServer) {
           return;
         }
 
-        // Check user's device quota and existing devices
-        const existingDevices = await getDevicesByUserId(tokenRecord.userId);
-        const user = await getUserById(tokenRecord.userId);
-        const maxDevices = user?.maxDevices ?? 1;
+        const hardwareId = data.deviceInfo?.hardwareId || data.deviceInfo?.androidId || null;
         let device;
         let deviceId: string;
 
+        // Step 1: Try to find existing device by hardware fingerprint (same physical phone)
+        if (hardwareId) {
+          const existingByHw = await getDeviceByHardwareId(tokenRecord.userId, hardwareId);
+          if (existingByHw) {
+            // Same phone reconnecting - reuse the old device record (preserves read status, pins, messages)
+            deviceId = `dev_${nanoid(16)}`;
+            await updateDevice(existingByHw.id, {
+              deviceId,
+              name: data.deviceInfo?.phoneModel || existingByHw.name,
+              phoneModel: data.deviceInfo?.phoneModel || existingByHw.phoneModel,
+              androidVersion: data.deviceInfo?.androidVersion || existingByHw.androidVersion,
+              phoneNumber: data.deviceInfo?.phoneNumber || existingByHw.phoneNumber,
+              isOnline: true,
+              batteryLevel: data.deviceInfo?.batteryLevel || existingByHw.batteryLevel,
+              signalStrength: data.deviceInfo?.signalStrength || existingByHw.signalStrength,
+              lastSeen: new Date(),
+            });
+            device = { ...existingByHw, deviceId, isOnline: true };
+            console.log(`[WS] Recognized same phone by hardwareId=${hardwareId}, reused device id=${existingByHw.id}, new deviceId=${deviceId}`);
+
+            await updatePairingToken(tokenRecord.id, { status: "paired", deviceId: device.id });
+            connectedDevices.set(deviceId, socket);
+            socket.data.deviceId = deviceId;
+            socket.data.userId = tokenRecord.userId;
+            socket.emit("pair_result", { success: true, deviceId });
+            broadcastToDashboard(tokenRecord.userId, "device_paired", { device });
+            return;
+          }
+        }
+
+        // Step 2: No hardware match - check quota and create/reuse device
+        const existingDevices = await getDevicesByUserId(tokenRecord.userId);
+        const user = await getUserById(tokenRecord.userId);
+        const maxDevices = user?.maxDevices ?? 1;
+
         if (existingDevices.length < maxDevices) {
-          // User has quota remaining - create a new device (support multiple messengers)
+          // User has quota remaining - create a new device
           deviceId = `dev_${nanoid(16)}`;
           device = await createDevice({
             userId: tokenRecord.userId,
             deviceId,
+            hardwareId,
             name: data.deviceInfo?.phoneModel || `Phone ${deviceId.slice(-6)}`,
             phoneModel: data.deviceInfo?.phoneModel || null,
             androidVersion: data.deviceInfo?.androidVersion || null,
@@ -92,10 +126,9 @@ export function initWebSocket(server: HttpServer) {
             signalStrength: data.deviceInfo?.signalStrength || null,
             lastSeen: new Date(),
           });
-          console.log(`[WS] Created new device id=${device.id}, deviceId=${deviceId} (${existingDevices.length + 1}/${maxDevices})`);
+          console.log(`[WS] Created new device id=${device.id}, deviceId=${deviceId}, hardwareId=${hardwareId} (${existingDevices.length + 1}/${maxDevices})`);
         } else if (existingDevices.length > 0) {
-          // Device quota full - reuse the oldest device to preserve history
-          // Sort by lastSeen ascending, reuse the one that's been offline longest
+          // Device quota full - reuse the oldest offline device
           const sorted = [...existingDevices].sort((a, b) => {
             const aTime = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
             const bTime = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
@@ -105,6 +138,7 @@ export function initWebSocket(server: HttpServer) {
           deviceId = `dev_${nanoid(16)}`;
           await updateDevice(existing.id, {
             deviceId,
+            hardwareId,
             name: data.deviceInfo?.phoneModel || existing.name,
             phoneModel: data.deviceInfo?.phoneModel || existing.phoneModel,
             androidVersion: data.deviceInfo?.androidVersion || existing.androidVersion,
@@ -115,9 +149,8 @@ export function initWebSocket(server: HttpServer) {
             lastSeen: new Date(),
           });
           device = { ...existing, deviceId, isOnline: true };
-          console.log(`[WS] Quota full (${maxDevices}/${maxDevices}), re-paired oldest device id=${existing.id}, new deviceId=${deviceId}`);
+          console.log(`[WS] Quota full (${maxDevices}/${maxDevices}), re-paired oldest device id=${existing.id}, new deviceId=${deviceId}, hardwareId=${hardwareId}`);
         } else {
-          // Edge case: maxDevices is 0, shouldn't happen but handle gracefully
           socket.emit("pair_result", { success: false, error: "No device quota available" });
           return;
         }

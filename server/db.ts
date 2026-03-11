@@ -340,6 +340,16 @@ export async function getDeviceByDeviceId(deviceId: string) {
   return result[0];
 }
 
+/** Find an existing device by hardware fingerprint (e.g. Android ID) for the same user */
+export async function getDeviceByHardwareId(userId: number, hardwareId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(devices)
+    .where(and(eq(devices.userId, userId), eq(devices.hardwareId, hardwareId)))
+    .limit(1);
+  return result[0];
+}
+
 export async function getDeviceById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
