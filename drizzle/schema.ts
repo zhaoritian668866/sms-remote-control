@@ -226,3 +226,82 @@ export const contactReadStatus = mysqlTable("contact_read_status", {
 
 export type ContactReadStatus = typeof contactReadStatus.$inferSelect;
 export type InsertContactReadStatus = typeof contactReadStatus.$inferInsert;
+
+/**
+ * AI auto-reply configuration - global settings managed by superadmin.
+ * Uses OpenAI-compatible API format (works with DeepSeek, Qwen, etc.)
+ */
+export const aiConfig = mysqlTable("ai_config", {
+  id: int("id").autoincrement().primaryKey(),
+  /** OpenAI-compatible API base URL (e.g. https://api.openai.com/v1) */
+  apiUrl: varchar("apiUrl", { length: 512 }).notNull(),
+  /** API Key */
+  apiKey: varchar("apiKey", { length: 512 }).notNull(),
+  /** Model name (e.g. gpt-4o-mini, deepseek-chat) */
+  modelName: varchar("modelName", { length: 128 }).notNull(),
+  /** Whether AI auto-reply is globally enabled */
+  isEnabled: boolean("isEnabled").default(false).notNull(),
+  /** SMS banned words list (JSON array of strings) */
+  bannedWords: text("bannedWords"),
+  /** Banned word replacements (JSON object: {"banned": "replacement"}) */
+  bannedWordReplacements: text("bannedWordReplacements"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AiConfig = typeof aiConfig.$inferSelect;
+export type InsertAiConfig = typeof aiConfig.$inferInsert;
+
+/**
+ * AI auto-reply user settings - per-user (messenger) AI configuration.
+ */
+export const aiUserSettings = mysqlTable("ai_user_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  /** Whether AI auto-reply is enabled for this user */
+  isEnabled: boolean("isEnabled").default(false).notNull(),
+  /** AI persona name (the name AI uses to introduce itself) */
+  personaName: varchar("personaName", { length: 64 }).notNull().default("小美"),
+  /** Target APP name to guide customers to (e.g. WeChat, Telegram) */
+  targetApp: varchar("targetApp", { length: 128 }).notNull().default("微信"),
+  /** Target APP ID or contact info to give customers */
+  targetAppId: varchar("targetAppId", { length: 256 }),
+  /** Custom system prompt override (optional, for advanced users) */
+  customPrompt: text("customPrompt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AiUserSettings = typeof aiUserSettings.$inferSelect;
+export type InsertAiUserSettings = typeof aiUserSettings.$inferInsert;
+
+/**
+ * AI conversation tracking - tracks AI dialogue state per device+contact.
+ * Used to manage the 10-round conversation strategy and extracted customer info.
+ */
+export const aiConversations = mysqlTable("ai_conversations", {
+  id: int("id").autoincrement().primaryKey(),
+  deviceId: int("deviceId").notNull(),
+  phoneNumber: varchar("phoneNumber", { length: 32 }).notNull(),
+  userId: int("userId").notNull(),
+  /** Current conversation round (1-10) */
+  currentRound: int("currentRound").default(0).notNull(),
+  /** Whether AI auto-reply is active for this contact (auto-disabled after 10 rounds) */
+  isActive: boolean("isActive").default(true).notNull(),
+  /** Extracted customer age (null if not yet obtained) */
+  customerAge: int("customerAge"),
+  /** Extracted customer job/occupation */
+  customerJob: varchar("customerJob", { length: 128 }),
+  /** Extracted customer income range */
+  customerIncome: varchar("customerIncome", { length: 128 }),
+  /** Extracted customer marital status */
+  customerMaritalStatus: varchar("customerMaritalStatus", { length: 64 }),
+  /** Conversation history summary (JSON array of {role, content}) for context */
+  conversationHistory: text("conversationHistory"),
+  /** Whether customer has been guided to target APP */
+  hasGuidedToApp: boolean("hasGuidedToApp").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AiConversation = typeof aiConversations.$inferSelect;
+export type InsertAiConversation = typeof aiConversations.$inferInsert;

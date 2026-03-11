@@ -15,6 +15,7 @@ import {
   updateDevice,
 } from "./db";
 import { notifyOwner } from "./_core/notification";
+import { generateAiReply } from "./aiEngine";
 
 // Track connected devices and dashboard clients
 const connectedDevices = new Map<string, Socket>(); // deviceId -> socket
@@ -236,6 +237,48 @@ export function initWebSocket(server: HttpServer) {
             });
           } catch (e) {
             // Silently ignore on self-hosted servers
+          }
+        }
+
+        // AI Auto-Reply: only trigger for incoming messages with text content
+        if ((data.direction !== "sent") && data.body && data.body.trim()) {
+          try {
+            const aiResult = await generateAiReply(
+              device.id,
+              data.phoneNumber,
+              device.userId,
+              data.body
+            );
+            if (aiResult.success && aiResult.reply) {
+              console.log(`[AI] Auto-reply to ${data.phoneNumber} (round ${aiResult.round}): ${aiResult.reply.substring(0, 50)}...`);
+              // Send the AI reply via the device
+              const sendResult = await sendSmsToDevice(deviceId, data.phoneNumber, aiResult.reply);
+              if (sendResult.success) {
+                // Save the AI reply as an outgoing message
+                const aiMsg = await createMessage({
+                  deviceId: device.id,
+                  direction: "outgoing",
+                  phoneNumber: data.phoneNumber,
+                  contactName: data.contactName || null,
+                  body: aiResult.reply,
+                  messageType: "text",
+                  imageUrl: null,
+                  status: "sent",
+                  smsTimestamp: Date.now(),
+                });
+                broadcastToDashboard(device.userId, "new_sms", {
+                  message: aiMsg,
+                  deviceId,
+                  deviceName: device.name,
+                  isAiReply: true,
+                });
+                console.log(`[AI] Reply sent successfully to ${data.phoneNumber}`);
+              } else {
+                console.error(`[AI] Failed to send reply: ${sendResult.error}`);
+              }
+            }
+          } catch (aiErr) {
+            console.error("[AI] Auto-reply error:", aiErr);
           }
         }
       } catch (err) {

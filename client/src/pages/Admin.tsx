@@ -7,7 +7,8 @@ import {
   Users, Smartphone, MessageSquare, Wifi, Shield, ShieldOff,
   Loader2, Search, Save, KeyRound, ChevronDown, ChevronUp,
   BarChart3, Crown, Settings, Link2, ExternalLink, Plus,
-  Building2, Hash, Copy, Eye, EyeOff, Layers,
+  Building2, Hash, Copy, Eye, EyeOff, Layers, Bot, Zap,
+  CheckCircle2, XCircle, AlertTriangle,
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
@@ -56,13 +57,14 @@ export default function Admin() {
 }
 
 function AdminContent() {
-  const [tab, setTab] = useState<"stats" | "groups" | "users" | "messages" | "config">("stats");
+  const [tab, setTab] = useState<"stats" | "groups" | "users" | "messages" | "config" | "ai">("stats");
 
   const tabs = [
     { key: "stats" as const, label: "系统概览", icon: BarChart3 },
     { key: "groups" as const, label: "用户组管理", icon: Building2 },
     { key: "users" as const, label: "全部用户", icon: Users },
     { key: "messages" as const, label: "全部记录", icon: MessageSquare },
+    { key: "ai" as const, label: "AI配置", icon: Bot },
     { key: "config" as const, label: "系统配置", icon: Settings },
   ];
 
@@ -97,7 +99,234 @@ function AdminContent() {
         {tab === "groups" && <GroupsPanel />}
         {tab === "users" && <AllUsersPanel />}
         {tab === "messages" && <MessagesPanel />}
+        {tab === "ai" && <AiConfigPanel />}
         {tab === "config" && <ConfigPanel />}
+      </div>
+    </div>
+  );
+}
+
+function AiConfigPanel() {
+  const { data: config, isLoading, refetch } = trpc.ai.getConfig.useQuery();
+  const [apiUrl, setApiUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [modelName, setModelName] = useState("");
+  const [isEnabled, setIsEnabled] = useState(false);
+  const [bannedWords, setBannedWords] = useState("");
+  const [bannedReplacements, setBannedReplacements] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [testError, setTestError] = useState("");
+
+  const updateMutation = trpc.ai.updateConfig.useMutation({
+    onSuccess: () => { toast.success("AI配置已保存"); refetch(); },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const testMutation = trpc.ai.testConnection.useMutation({
+    onSuccess: (result) => {
+      if (result.success) {
+        setTestStatus("success");
+        toast.success("AI接口连接成功");
+      } else {
+        setTestStatus("error");
+        setTestError(result.error || "连接失败");
+        toast.error(result.error || "连接失败");
+      }
+    },
+    onError: (err: any) => {
+      setTestStatus("error");
+      setTestError(err.message);
+      toast.error(err.message);
+    },
+  });
+
+  useEffect(() => {
+    if (config) {
+      setApiUrl(config.apiUrl || "");
+      setApiKey(config.apiKey || "");
+      setModelName(config.modelName || "");
+      setIsEnabled(config.isEnabled || false);
+      setBannedWords(config.bannedWords || "");
+      setBannedReplacements(config.bannedWordReplacements || "");
+    }
+  }, [config]);
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-foreground/40" /></div>;
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Global Switch */}
+      <div className="relative bg-card/50 border border-foreground/10 p-6">
+        <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-foreground/15" />
+        <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-foreground/15" />
+        <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-foreground/15" />
+        <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-foreground/15" />
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Bot className="w-4 h-4 text-foreground/60" />
+            <h3 className="text-sm font-serif text-foreground tracking-wider">AI 自动回复</h3>
+            <span className="text-[10px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400/80 rounded font-body">Beta</span>
+          </div>
+          <button
+            onClick={() => setIsEnabled(!isEnabled)}
+            className={`relative w-11 h-6 rounded-full transition-colors ${
+              isEnabled ? "bg-green-500/80" : "bg-foreground/20"
+            }`}
+          >
+            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+              isEnabled ? "left-[22px]" : "left-0.5"
+            }`} />
+          </button>
+        </div>
+        <p className="text-xs font-body text-muted-foreground/50">
+          开启后，信使可在各自账号中启用 AI 自动回复功能。AI 将根据预设策略自动回复客户短信。
+        </p>
+      </div>
+
+      {/* API Configuration */}
+      <div className="relative bg-card/50 border border-foreground/10 p-6">
+        <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-foreground/15" />
+        <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-foreground/15" />
+        <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-foreground/15" />
+        <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-foreground/15" />
+        <div className="flex items-center gap-2 mb-4">
+          <Zap className="w-4 h-4 text-foreground/60" />
+          <h3 className="text-sm font-serif text-foreground tracking-wider">API 接口配置</h3>
+          <span className="text-[10px] font-body text-muted-foreground/40">OpenAI 兼容格式</span>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-body text-muted-foreground/60 mb-1.5 block">API 地址</label>
+            <Input
+              value={apiUrl}
+              onChange={e => setApiUrl(e.target.value)}
+              placeholder="例如：https://api.openai.com/v1 或 https://api.deepseek.com/v1"
+              className="h-9 bg-background/60 border-foreground/10 text-sm font-body"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-body text-muted-foreground/60 mb-1.5 block">API Key</label>
+            <div className="relative">
+              <Input
+                type={showKey ? "text" : "password"}
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                placeholder="sk-..."
+                className="h-9 bg-background/60 border-foreground/10 text-sm font-body pr-10"
+              />
+              <button
+                onClick={() => setShowKey(!showKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-muted-foreground"
+              >
+                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-body text-muted-foreground/60 mb-1.5 block">模型名称</label>
+            <Input
+              value={modelName}
+              onChange={e => setModelName(e.target.value)}
+              placeholder="例如：gpt-4o-mini 或 deepseek-chat"
+              className="h-9 bg-background/60 border-foreground/10 text-sm font-body"
+            />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              onClick={() => {
+                setTestStatus("testing");
+                testMutation.mutate({ apiUrl, apiKey, modelName });
+              }}
+              disabled={!apiUrl || !apiKey || !modelName || testMutation.isPending}
+              className="h-9 px-4 bg-blue-500/20 border border-blue-500/30 text-blue-400/80 hover:bg-blue-500/30 text-xs font-body"
+            >
+              {testMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Zap className="w-3 h-3 mr-1" />}
+              测试连接
+            </Button>
+            {testStatus === "success" && (
+              <span className="flex items-center gap-1 text-xs text-green-400/80 font-body">
+                <CheckCircle2 className="w-3.5 h-3.5" /> 连接成功
+              </span>
+            )}
+            {testStatus === "error" && (
+              <span className="flex items-center gap-1 text-xs text-red-400/80 font-body">
+                <XCircle className="w-3.5 h-3.5" /> {testError}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Banned Words */}
+      <div className="relative bg-card/50 border border-foreground/10 p-6">
+        <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-foreground/15" />
+        <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-foreground/15" />
+        <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-foreground/15" />
+        <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-foreground/15" />
+        <div className="flex items-center gap-2 mb-4">
+          <AlertTriangle className="w-4 h-4 text-foreground/60" />
+          <h3 className="text-sm font-serif text-foreground tracking-wider">SMS 违禁词过滤</h3>
+        </div>
+        <p className="text-xs font-body text-muted-foreground/50 mb-4">
+          AI 生成的回复将自动检测并替换违禁词，防止短信被屏蔽。每行一个违禁词。
+        </p>
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-body text-muted-foreground/60 mb-1.5 block">违禁词列表（每行一个）</label>
+            <textarea
+              value={bannedWords}
+              onChange={e => setBannedWords(e.target.value)}
+              placeholder="例如：\n赌博\n贷款\n刷单"
+              rows={4}
+              className="w-full px-3 py-2 bg-background/60 border border-foreground/10 text-sm font-body text-foreground rounded resize-none focus:outline-none focus:ring-1 focus:ring-foreground/20"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-body text-muted-foreground/60 mb-1.5 block">替换规则（格式：违禁词=替换词，每行一条）</label>
+            <textarea
+              value={bannedReplacements}
+              onChange={e => setBannedReplacements(e.target.value)}
+              placeholder="例如：\n微信=V信\n支付宝=ZFB\n银行卡=YHK"
+              rows={4}
+              className="w-full px-3 py-2 bg-background/60 border border-foreground/10 text-sm font-body text-foreground rounded resize-none focus:outline-none focus:ring-1 focus:ring-foreground/20"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Save Button */}
+      <div className="flex justify-end">
+        <Button
+          onClick={() => {
+            // Convert banned words text to JSON array
+            const wordsArray = bannedWords.split("\n").map(w => w.trim()).filter(Boolean);
+            // Convert replacements text to JSON object
+            const replacementsObj: Record<string, string> = {};
+            bannedReplacements.split("\n").forEach(line => {
+              const [key, val] = line.split("=").map(s => s.trim());
+              if (key && val) replacementsObj[key] = val;
+            });
+            updateMutation.mutate({
+              apiUrl: apiUrl.trim(),
+              apiKey: apiKey.trim(),
+              modelName: modelName.trim(),
+              isEnabled,
+              bannedWords: JSON.stringify(wordsArray),
+              bannedWordReplacements: JSON.stringify(replacementsObj),
+            });
+          }}
+          disabled={!apiUrl || !apiKey || !modelName || updateMutation.isPending}
+          className="h-9 px-6 bg-foreground/10 border border-foreground/15 text-foreground/70 hover:bg-foreground/20 text-xs font-body"
+        >
+          {updateMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+          保存配置
+        </Button>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import { eq, and, desc, like, or, gte, lte, sql, asc, count, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, devices, pairingTokens, messages, systemConfig, groups, smsTemplates, deviceContacts, bulkTasks, pinnedContacts, contactReadStatus, type InsertDevice, type InsertPairingToken, type InsertMessage, type InsertGroup, type InsertSmsTemplate, type InsertDeviceContact, type InsertBulkTask } from "../drizzle/schema";
+import { InsertUser, users, devices, pairingTokens, messages, systemConfig, groups, smsTemplates, deviceContacts, bulkTasks, pinnedContacts, contactReadStatus, aiConfig, aiUserSettings, aiConversations, type InsertDevice, type InsertPairingToken, type InsertMessage, type InsertGroup, type InsertSmsTemplate, type InsertDeviceContact, type InsertBulkTask, type InsertAiConfig, type AiConfig, type AiUserSettings, type AiConversation } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1301,4 +1301,140 @@ export async function batchMarkContactsAsRead(deviceId: number, entries: { phone
       ON DUPLICATE KEY UPDATE lastReadAt = VALUES(lastReadAt)
     `);
   }
+}
+
+// ─── AI Config (Global, managed by superadmin) ───
+
+export async function getAiConfig(): Promise<AiConfig | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(aiConfig).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function upsertAiConfig(data: { apiUrl: string; apiKey: string; modelName: string; isEnabled: boolean; bannedWords?: string; bannedWordReplacements?: string }): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getAiConfig();
+  if (existing) {
+    await db.update(aiConfig).set({
+      apiUrl: data.apiUrl,
+      apiKey: data.apiKey,
+      modelName: data.modelName,
+      isEnabled: data.isEnabled,
+      bannedWords: data.bannedWords ?? null,
+      bannedWordReplacements: data.bannedWordReplacements ?? null,
+    }).where(eq(aiConfig.id, existing.id));
+  } else {
+    await db.insert(aiConfig).values({
+      apiUrl: data.apiUrl,
+      apiKey: data.apiKey,
+      modelName: data.modelName,
+      isEnabled: data.isEnabled,
+      bannedWords: data.bannedWords ?? null,
+      bannedWordReplacements: data.bannedWordReplacements ?? null,
+    });
+  }
+}
+
+// ─── AI User Settings (per messenger) ───
+
+export async function getAiUserSettings(userId: number): Promise<AiUserSettings | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(aiUserSettings).where(eq(aiUserSettings.userId, userId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function upsertAiUserSettings(userId: number, data: { isEnabled?: boolean; personaName?: string; targetApp?: string; targetAppId?: string; customPrompt?: string }): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getAiUserSettings(userId);
+  if (existing) {
+    await db.update(aiUserSettings).set({
+      ...data,
+    }).where(eq(aiUserSettings.id, existing.id));
+  } else {
+    await db.insert(aiUserSettings).values({
+      userId,
+      personaName: data.personaName ?? "小美",
+      targetApp: data.targetApp ?? "微信",
+      targetAppId: data.targetAppId ?? null,
+      isEnabled: data.isEnabled ?? false,
+      customPrompt: data.customPrompt ?? null,
+    });
+  }
+}
+
+// ─── AI Conversations (per device+contact) ───
+
+export async function getAiConversation(deviceId: number, phoneNumber: string): Promise<AiConversation | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(aiConversations)
+    .where(and(eq(aiConversations.deviceId, deviceId), eq(aiConversations.phoneNumber, phoneNumber)))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function upsertAiConversation(data: {
+  deviceId: number;
+  phoneNumber: string;
+  userId: number;
+  currentRound?: number;
+  isActive?: boolean;
+  customerAge?: number | null;
+  customerJob?: string | null;
+  customerIncome?: string | null;
+  customerMaritalStatus?: string | null;
+  conversationHistory?: string | null;
+  hasGuidedToApp?: boolean;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getAiConversation(data.deviceId, data.phoneNumber);
+  if (existing) {
+    const updateData: Record<string, unknown> = {};
+    if (data.currentRound !== undefined) updateData.currentRound = data.currentRound;
+    if (data.isActive !== undefined) updateData.isActive = data.isActive;
+    if (data.customerAge !== undefined) updateData.customerAge = data.customerAge;
+    if (data.customerJob !== undefined) updateData.customerJob = data.customerJob;
+    if (data.customerIncome !== undefined) updateData.customerIncome = data.customerIncome;
+    if (data.customerMaritalStatus !== undefined) updateData.customerMaritalStatus = data.customerMaritalStatus;
+    if (data.conversationHistory !== undefined) updateData.conversationHistory = data.conversationHistory;
+    if (data.hasGuidedToApp !== undefined) updateData.hasGuidedToApp = data.hasGuidedToApp;
+    if (Object.keys(updateData).length > 0) {
+      await db.update(aiConversations).set(updateData).where(eq(aiConversations.id, existing.id));
+    }
+  } else {
+    await db.insert(aiConversations).values({
+      deviceId: data.deviceId,
+      phoneNumber: data.phoneNumber,
+      userId: data.userId,
+      currentRound: data.currentRound ?? 0,
+      isActive: data.isActive ?? true,
+      customerAge: data.customerAge ?? null,
+      customerJob: data.customerJob ?? null,
+      customerIncome: data.customerIncome ?? null,
+      customerMaritalStatus: data.customerMaritalStatus ?? null,
+      conversationHistory: data.conversationHistory ?? null,
+      hasGuidedToApp: data.hasGuidedToApp ?? false,
+    });
+  }
+}
+
+export async function getAiConversationsByDevice(deviceId: number): Promise<AiConversation[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(aiConversations)
+    .where(eq(aiConversations.deviceId, deviceId))
+    .orderBy(desc(aiConversations.updatedAt));
+}
+
+export async function getAiConversationsByUser(userId: number): Promise<AiConversation[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(aiConversations)
+    .where(eq(aiConversations.userId, userId))
+    .orderBy(desc(aiConversations.updatedAt));
 }

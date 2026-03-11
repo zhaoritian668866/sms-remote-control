@@ -76,7 +76,15 @@ import {
   getReadStatusByDeviceId,
   markContactAsRead,
   batchMarkContactsAsRead,
+  getAiConfig,
+  upsertAiConfig,
+  getAiUserSettings,
+  upsertAiUserSettings,
+  getAiConversation,
+  getAiConversationsByUser,
+  getAiConversationsByDevice,
 } from "./db";
+import { generateAiReply, testAiConnection } from "./aiEngine";
 import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest } from "./wsManager";
 import { saveFileLocally } from "./_core/index";
 import { storagePut } from "./storage";
@@ -1253,6 +1261,97 @@ export const appRouter = router({
       const link = await getConfigValue("customer_service_link");
       return { link: link || "" };
     }),
+  }),
+
+  // ─── AI Auto-Reply ───
+  ai: router({
+    // Superadmin: Get global AI config
+    getConfig: superadminProcedure.query(async () => {
+      const config = await getAiConfig();
+      return config || null;
+    }),
+
+    // Superadmin: Update global AI config
+    updateConfig: superadminProcedure
+      .input(z.object({
+        apiUrl: z.string().min(1),
+        apiKey: z.string().min(1),
+        modelName: z.string().min(1),
+        isEnabled: z.boolean(),
+        bannedWords: z.string().optional(),
+        bannedWordReplacements: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        await upsertAiConfig(input);
+        return { success: true };
+      }),
+
+    // Superadmin: Test AI connection
+    testConnection: superadminProcedure
+      .input(z.object({
+        apiUrl: z.string().min(1),
+        apiKey: z.string().min(1),
+        modelName: z.string().min(1),
+      }))
+      .mutation(async ({ input }) => {
+        return testAiConnection(input.apiUrl, input.apiKey, input.modelName);
+      }),
+
+    // User: Get own AI settings
+    getSettings: protectedProcedure.query(async ({ ctx }) => {
+      const settings = await getAiUserSettings(ctx.user.id);
+      return settings || null;
+    }),
+
+    // User: Update own AI settings
+    updateSettings: protectedProcedure
+      .input(z.object({
+        isEnabled: z.boolean().optional(),
+        personaName: z.string().min(1).optional(),
+        targetApp: z.string().min(1).optional(),
+        targetAppId: z.string().optional(),
+        customPrompt: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await upsertAiUserSettings(ctx.user.id, input);
+        return { success: true };
+      }),
+
+    // User: Get AI conversations for their devices
+    conversations: protectedProcedure
+      .input(z.object({ deviceId: z.number().optional() }))
+      .query(async ({ ctx, input }) => {
+        if (input.deviceId) {
+          const device = await getDeviceById(input.deviceId);
+          if (!device || device.userId !== ctx.user.id) return [];
+          return getAiConversationsByDevice(input.deviceId);
+        }
+        return getAiConversationsByUser(ctx.user.id);
+      }),
+
+    // User: Get single conversation detail
+    conversation: protectedProcedure
+      .input(z.object({ deviceId: z.number(), phoneNumber: z.string().min(1) }))
+      .query(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) return null;
+        return getAiConversation(input.deviceId, input.phoneNumber);
+      }),
+
+    // Manual trigger AI reply (for testing)
+    triggerReply: protectedProcedure
+      .input(z.object({
+        deviceId: z.number(),
+        phoneNumber: z.string().min(1),
+        message: z.string().min(1),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) {
+          throw new Error("\u8BBE\u5907\u4E0D\u5B58\u5728");
+        }
+        return generateAiReply(input.deviceId, input.phoneNumber, ctx.user.id, input.message);
+      }),
   }),
 });
 

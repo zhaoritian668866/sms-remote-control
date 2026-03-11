@@ -22,7 +22,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useUnreadCounts } from "@/hooks/useUnread";
-import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft, Crown, Building2, FileDown, FileText, Zap, Eye, BarChart3, Sun, Moon, ScrollText } from "lucide-react";
+import { Smartphone, MessageSquare, History, LayoutDashboard, LogOut, PanelLeft, Crown, Building2, FileDown, FileText, Zap, Eye, BarChart3, Sun, Moon, ScrollText, Bot } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -154,6 +154,7 @@ function DashboardLayoutContent({
     { icon: Zap, label: "群发", path: "/bulk-send" },
     { icon: FileDown, label: "导出", path: "/export" },
     { icon: BarChart3, label: "统计", path: "/stats" },
+    { icon: Bot, label: "AI回复", path: "/ai-reply" },
   ];
 
   const activeMenuItem = menuItems.find(item => item.path === location);

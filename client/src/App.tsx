@@ -21,6 +21,7 @@ import Auditor from "./pages/Auditor";
 import Landing from "./pages/Landing";
 import Stats from "./pages/Stats";
 import ChatRecords from "./pages/ChatRecords";
+import AiReply from "./pages/AiReply";
 
 function Router() {
   return (
@@ -40,6 +41,7 @@ function Router() {
       <Route path={"/auditor"} component={Auditor} />
       <Route path={"/stats"} component={Stats} />
       <Route path={"/chat-records"} component={ChatRecords} />
+      <Route path={"/ai-reply"} component={AiReply} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
