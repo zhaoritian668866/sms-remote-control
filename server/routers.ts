@@ -72,6 +72,7 @@ import {
   getChatContactsByDeviceIdAndDate,
   getMessagesByContactAndDate,
   getDevicesForChatRecords,
+  searchChatContacts,
 } from "./db";
 import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest } from "./wsManager";
 import { saveFileLocally } from "./_core/index";
@@ -1142,6 +1143,27 @@ export const appRouter = router({
           if (!owner || owner.groupId !== ctx.user.groupId) throw new Error("无权访问该设备");
         }
         return getChatContactsByDeviceIdAndDate(input.deviceId, input.startTime, input.endTime);
+      }),
+    // Search contacts by keyword (name, phone, or message content)
+    searchContacts: protectedProcedure
+      .input(z.object({
+        deviceId: z.number(),
+        startTime: z.number(),
+        endTime: z.number(),
+        keyword: z.string().min(1),
+      }))
+      .query(async ({ ctx, input }) => {
+        const role = ctx.user.role;
+        if (role !== "admin" && role !== "superadmin" && role !== "auditor") {
+          throw new Error("\u65E0\u6743\u8BBF\u95EE");
+        }
+        const device = await getDeviceById(input.deviceId);
+        if (!device) throw new Error("\u8BBE\u5907\u4E0D\u5B58\u5728");
+        if (role === "admin") {
+          const owner = await getUserById(device.userId);
+          if (!owner || owner.groupId !== ctx.user.groupId) throw new Error("\u65E0\u6743\u8BBF\u95EE\u8BE5\u8BBE\u5907");
+        }
+        return searchChatContacts(input.deviceId, input.startTime, input.endTime, input.keyword);
       }),
     // Get messages for a specific contact within a date range
     messages: protectedProcedure

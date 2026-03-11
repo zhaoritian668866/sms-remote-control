@@ -1146,6 +1146,57 @@ export async function getMessagesByContactAndDate(deviceId: number, phoneNumber:
     .limit(2000);
 }
 
+// ─── Chat Records: Search contacts by name, phone, or message content ───
+export async function searchChatContacts(deviceId: number, startTime: number, endTime: number, keyword: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const q = `%${keyword}%`;
+  // Find all phoneNumbers that match: contactName, phoneNumber, or body contains keyword
+  const matchedPhones = await db.selectDistinct({ phoneNumber: messages.phoneNumber })
+    .from(messages)
+    .where(and(
+      eq(messages.deviceId, deviceId),
+      gte(messages.smsTimestamp, startTime),
+      lte(messages.smsTimestamp, endTime),
+      or(
+        like(messages.phoneNumber, q),
+        like(messages.contactName, q),
+        like(messages.body, q)
+      )
+    ));
+  if (matchedPhones.length === 0) return [];
+  const phoneList = matchedPhones.map(p => p.phoneNumber);
+  // Now get full contact aggregation for those phone numbers
+  const result = await db.select({
+    phoneNumber: messages.phoneNumber,
+    contactName: sql<string>`MAX(${messages.contactName})`.as("contactName"),
+    lastMessage: sql<string>`SUBSTRING(MAX(CONCAT(LPAD(${messages.smsTimestamp}, 20, '0'), ${messages.body})), 21)`.as("lastMessage"),
+    lastTime: sql<number>`MAX(${messages.smsTimestamp})`.as("lastTime"),
+    totalMessages: sql<number>`COUNT(*)`.as("totalMessages"),
+    incomingCount: sql<number>`SUM(CASE WHEN ${messages.direction} = 'incoming' THEN 1 ELSE 0 END)`.as("incomingCount"),
+    outgoingCount: sql<number>`SUM(CASE WHEN ${messages.direction} = 'outgoing' THEN 1 ELSE 0 END)`.as("outgoingCount"),
+  })
+    .from(messages)
+    .where(and(
+      eq(messages.deviceId, deviceId),
+      gte(messages.smsTimestamp, startTime),
+      lte(messages.smsTimestamp, endTime),
+      inArray(messages.phoneNumber, phoneList)
+    ))
+    .groupBy(messages.phoneNumber)
+    .orderBy(sql`MAX(${messages.smsTimestamp}) DESC`);
+  return result.map(r => ({
+    phoneNumber: r.phoneNumber,
+    contactName: r.contactName || null,
+    lastMessage: r.lastMessage ? (r.lastMessage.length > 30 ? r.lastMessage.slice(0, 30) + "..." : r.lastMessage) : "",
+    lastTime: r.lastTime,
+    totalMessages: Number(r.totalMessages),
+    incomingCount: Number(r.incomingCount),
+    outgoingCount: Number(r.outgoingCount),
+    hasReplied: Number(r.incomingCount) > 0,
+  }));
+}
+
 // ─── Chat Records: Get all devices visible to a role ───
 export async function getDevicesForChatRecords(userId: number, role: string, groupId: number | null) {
   const db = await getDb();

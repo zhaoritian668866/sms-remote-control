@@ -40,6 +40,7 @@ export default function ChatRecords() {
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
   const [searchDevice, setSearchDevice] = useState("");
   const [searchContact, setSearchContact] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
 
   const { startTime, endTime } = useMemo(() => getDateRange(selectedDate), [selectedDate]);
@@ -96,15 +97,27 @@ export default function ChatRecords() {
     return devs;
   }, [devices, selectedGroupId, searchDevice]);
 
-  // Filter contacts
+  // Debounce search keyword
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchContact.trim());
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchContact]);
+
+  // Search contacts by keyword (name, phone, or message content)
+  const searchQuery = trpc.chatRecords.searchContacts.useQuery(
+    { deviceId: selectedDeviceId!, startTime, endTime, keyword: debouncedSearch },
+    { enabled: !!selectedDeviceId && debouncedSearch.length > 0 }
+  );
+
+  // Filter contacts: use search API results when keyword is present, otherwise show all
   const filteredContacts = useMemo(() => {
-    if (!searchContact.trim()) return contacts;
-    const q = searchContact.toLowerCase();
-    return contacts.filter(c =>
-      c.phoneNumber.toLowerCase().includes(q) ||
-      (c.contactName || "").toLowerCase().includes(q)
-    );
-  }, [contacts, searchContact]);
+    if (debouncedSearch.length > 0 && searchQuery.data) {
+      return searchQuery.data;
+    }
+    return contacts;
+  }, [contacts, debouncedSearch, searchQuery.data]);
 
   // Reset contact when device changes
   useEffect(() => {
@@ -316,7 +329,7 @@ export default function ChatRecords() {
                 <Input
                   value={searchContact}
                   onChange={e => setSearchContact(e.target.value)}
-                  placeholder="搜索联系人..."
+                  placeholder="搜索联系人/手机号/聊天内容..."
                   className="h-8 pl-8 text-xs bg-background/50 border-foreground/10"
                 />
               </div>
