@@ -172,23 +172,56 @@ async function callLLM(apiUrl: string, apiKey: string, modelName: string, messag
     baseUrl += '/chat/completions';
   }
 
-  const response = await fetch(baseUrl, {
+  // Build request body - try max_completion_tokens first (GPT-5.x+), fallback to max_tokens
+  const requestBody: Record<string, any> = {
+    model: modelName,
+    messages,
+    temperature: 0.8,
+  };
+
+  // Use max_completion_tokens for newer models (o1, o3, gpt-5.x+), max_tokens for others
+  const useNewParam = /^(o[0-9]|gpt-5|gpt-4o)/.test(modelName.toLowerCase());
+  if (useNewParam) {
+    requestBody.max_completion_tokens = 200;
+  } else {
+    requestBody.max_tokens = 200;
+  }
+
+  let response = await fetch(baseUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model: modelName,
-      messages,
-      temperature: 0.8,
-      max_tokens: 200,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
+  // If max_completion_tokens fails with unsupported_parameter, retry with max_tokens (and vice versa)
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`LLM API error (${response.status}): ${errorText}`);
+    if (errorText.includes('max_tokens') && errorText.includes('max_completion_tokens')) {
+      // Swap the parameter and retry
+      const retryBody: Record<string, any> = { model: modelName, messages, temperature: 0.8 };
+      if (useNewParam) {
+        retryBody.max_tokens = 200;
+      } else {
+        retryBody.max_completion_tokens = 200;
+      }
+      response = await fetch(baseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(retryBody),
+      });
+      if (!response.ok) {
+        const retryError = await response.text();
+        throw new Error(`LLM API error (${response.status}): ${retryError}`);
+      }
+    } else {
+      throw new Error(`LLM API error (${response.status}): ${errorText}`);
+    }
   }
 
   const data = await response.json() as any;

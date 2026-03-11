@@ -198,3 +198,4 @@
 - [x] AI自动回复：AI回复引擎（相亲场景10轮对话策略、委婉套取客户信息、年龄随机比客户大5-7岁）
 - [x] AI自动回复：SMS违禁词自动检测替换防屏蔽
 - [x] AI自动回复：WebSocket消息触发AI自动回复集成
+- [x] BUG修复：AI引擎兼容GPT-5.4等新模型（max_tokens改为max_completion_tokens）
