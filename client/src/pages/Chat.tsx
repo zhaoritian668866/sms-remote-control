@@ -286,24 +286,69 @@ export default function Chat() {
     setAutoScroll(scrollHeight - scrollTop - clientHeight < 100);
   }, []);
 
-  // 已读联系人记录（deviceId + phoneNumber -> lastReadTimestamp）
-  const [readTimestamps, setReadTimestamps] = useState<Record<string, number>>(() => {
+  // 已读联系人记录 - 从数据库持久化读取
+  const { data: dbReadStatus } = trpc.sms.readStatus.useQuery(
+    { deviceId },
+    { enabled: !!user && deviceId > 0 }
+  );
+
+  // 本地临时已读缓存（用于即时UI反馈，合并数据库数据）
+  const [localReadCache, setLocalReadCache] = useState<Record<string, number>>({});
+
+  // 合并数据库已读状态和本地缓存（取较大的时间戳）
+  const readTimestamps = useMemo(() => {
+    const merged: Record<string, number> = {};
+    if (dbReadStatus) {
+      Object.entries(dbReadStatus).forEach(([phone, ts]) => {
+        merged[phone] = ts as number;
+      });
+    }
+    Object.entries(localReadCache).forEach(([phone, ts]) => {
+      if (!merged[phone] || ts > merged[phone]) {
+        merged[phone] = ts;
+      }
+    });
+    return merged;
+  }, [dbReadStatus, localReadCache]);
+
+  // 一次性迁移：将 localStorage 中的旧数据迁移到数据库
+  const batchMarkReadMutation = trpc.sms.batchMarkRead.useMutation();
+  const migratedRef = useRef(false);
+  useEffect(() => {
+    if (!user || deviceId <= 0 || migratedRef.current) return;
+    migratedRef.current = true;
     try {
       const stored = localStorage.getItem(`sms_contact_read_${deviceId}`);
-      return stored ? JSON.parse(stored) : {};
-    } catch { return {}; }
+      if (stored) {
+        const parsed = JSON.parse(stored) as Record<string, number>;
+        const entries = Object.entries(parsed).map(([phoneNumber, lastReadAt]) => ({ phoneNumber, lastReadAt }));
+        if (entries.length > 0) {
+          batchMarkReadMutation.mutate({ deviceId, entries }, {
+            onSuccess: () => {
+              // 迁移成功后删除 localStorage 数据
+              localStorage.removeItem(`sms_contact_read_${deviceId}`);
+              utils.sms.readStatus.invalidate({ deviceId });
+            },
+          });
+        }
+      }
+    } catch {}
+  }, [user, deviceId]);
+
+  // 标记联系人已读 - 写入数据库
+  const markReadMutation = trpc.sms.markRead.useMutation({
+    onSuccess: () => {
+      utils.sms.readStatus.invalidate({ deviceId });
+    },
   });
 
-  // 标记联系人已读
   const markContactRead = useCallback((phoneNumber: string) => {
-    const key = phoneNumber;
     const now = Date.now();
-    setReadTimestamps(prev => {
-      const next = { ...prev, [key]: now };
-      try { localStorage.setItem(`sms_contact_read_${deviceId}`, JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }, [deviceId]);
+    // 即时更新本地缓存（UI立即响应）
+    setLocalReadCache(prev => ({ ...prev, [phoneNumber]: now }));
+    // 异步写入数据库
+    markReadMutation.mutate({ deviceId, phoneNumber, lastReadAt: now });
+  }, [deviceId, markReadMutation]);
 
   // 获取所有联系人（使用独立接口，不受消息条数限制）
   const contacts = useMemo(() => {

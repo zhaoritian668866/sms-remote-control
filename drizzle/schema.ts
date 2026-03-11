@@ -208,3 +208,19 @@ export const pinnedContacts = mysqlTable("pinned_contacts", {
 
 export type PinnedContact = typeof pinnedContacts.$inferSelect;
 export type InsertPinnedContact = typeof pinnedContacts.$inferInsert;
+
+/**
+ * Contact read status - persists the last read timestamp per device+contact.
+ * Used to track which messages have been read by the user, surviving reconnections.
+ */
+export const contactReadStatus = mysqlTable("contact_read_status", {
+  id: int("id").autoincrement().primaryKey(),
+  deviceId: int("deviceId").notNull(),
+  phoneNumber: varchar("phoneNumber", { length: 32 }).notNull(),
+  /** Unix timestamp (ms) of the last time the user read this contact's messages */
+  lastReadAt: bigint("lastReadAt", { mode: "number" }).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ContactReadStatus = typeof contactReadStatus.$inferSelect;
+export type InsertContactReadStatus = typeof contactReadStatus.$inferInsert;

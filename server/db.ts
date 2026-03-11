@@ -1,6 +1,6 @@
 import { eq, and, desc, like, or, gte, lte, sql, asc, count, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, devices, pairingTokens, messages, systemConfig, groups, smsTemplates, deviceContacts, bulkTasks, pinnedContacts, type InsertDevice, type InsertPairingToken, type InsertMessage, type InsertGroup, type InsertSmsTemplate, type InsertDeviceContact, type InsertBulkTask } from "../drizzle/schema";
+import { InsertUser, users, devices, pairingTokens, messages, systemConfig, groups, smsTemplates, deviceContacts, bulkTasks, pinnedContacts, contactReadStatus, type InsertDevice, type InsertPairingToken, type InsertMessage, type InsertGroup, type InsertSmsTemplate, type InsertDeviceContact, type InsertBulkTask } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1250,4 +1250,45 @@ export async function getDevicesForChatRecords(userId: number, role: string, gro
     return result;
   }
   return [];
+}
+
+// ─── Contact Read Status: Get all read timestamps for a device ───
+export async function getReadStatusByDeviceId(deviceId: number): Promise<Record<string, number>> {
+  const db = await getDb();
+  if (!db) return {};
+  const rows = await db.select({
+    phoneNumber: contactReadStatus.phoneNumber,
+    lastReadAt: contactReadStatus.lastReadAt,
+  }).from(contactReadStatus).where(eq(contactReadStatus.deviceId, deviceId));
+  const result: Record<string, number> = {};
+  for (const r of rows) {
+    result[r.phoneNumber] = r.lastReadAt;
+  }
+  return result;
+}
+
+// ─── Contact Read Status: Mark a contact as read (upsert) ───
+export async function markContactAsRead(deviceId: number, phoneNumber: string, lastReadAt: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  // Use INSERT ... ON DUPLICATE KEY UPDATE for upsert
+  await db.execute(sql`
+    INSERT INTO contact_read_status (deviceId, phoneNumber, lastReadAt)
+    VALUES (${deviceId}, ${phoneNumber}, ${lastReadAt})
+    ON DUPLICATE KEY UPDATE lastReadAt = VALUES(lastReadAt)
+  `);
+}
+
+// ─── Contact Read Status: Batch mark contacts as read ───
+export async function batchMarkContactsAsRead(deviceId: number, entries: { phoneNumber: string; lastReadAt: number }[]): Promise<void> {
+  const db = await getDb();
+  if (!db || entries.length === 0) return;
+  // Process in batches to avoid too large queries
+  for (const entry of entries) {
+    await db.execute(sql`
+      INSERT INTO contact_read_status (deviceId, phoneNumber, lastReadAt)
+      VALUES (${deviceId}, ${entry.phoneNumber}, ${entry.lastReadAt})
+      ON DUPLICATE KEY UPDATE lastReadAt = VALUES(lastReadAt)
+    `);
+  }
 }

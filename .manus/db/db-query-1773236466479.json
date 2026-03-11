@@ -1,0 +1,9 @@
+{
+  "query": "CREATE UNIQUE INDEX idx_device_phone ON contact_read_status(deviceId, phoneNumber);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user r4xdFagEgpfWtwT.root --database 4rTHqCojuh9Vnb7GsHmjrf --execute CREATE UNIQUE INDEX idx_device_phone ON contact_read_status(deviceId, phoneNumber);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 2347
+}

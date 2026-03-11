@@ -73,6 +73,9 @@ import {
   getMessagesByContactAndDate,
   getDevicesForChatRecords,
   searchChatContacts,
+  getReadStatusByDeviceId,
+  markContactAsRead,
+  batchMarkContactsAsRead,
 } from "./db";
 import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest } from "./wsManager";
 import { saveFileLocally } from "./_core/index";
@@ -339,6 +342,45 @@ export const appRouter = router({
           limit: input.limit,
           offset: input.offset,
         });
+      }),
+
+    // Get all read timestamps for a device (persisted in DB)
+    readStatus: protectedProcedure
+      .input(z.object({ deviceId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) return {};
+        return getReadStatusByDeviceId(input.deviceId);
+      }),
+
+    // Mark a single contact as read
+    markRead: protectedProcedure
+      .input(z.object({
+        deviceId: z.number(),
+        phoneNumber: z.string().min(1),
+        lastReadAt: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) throw new Error("\u65E0\u6743\u64CD\u4F5C");
+        await markContactAsRead(input.deviceId, input.phoneNumber, input.lastReadAt);
+        return { success: true };
+      }),
+
+    // Batch mark contacts as read (for migration from localStorage)
+    batchMarkRead: protectedProcedure
+      .input(z.object({
+        deviceId: z.number(),
+        entries: z.array(z.object({
+          phoneNumber: z.string().min(1),
+          lastReadAt: z.number(),
+        })),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const device = await getDeviceById(input.deviceId);
+        if (!device || device.userId !== ctx.user.id) throw new Error("\u65E0\u6743\u64CD\u4F5C");
+        await batchMarkContactsAsRead(input.deviceId, input.entries);
+        return { success: true };
       }),
 
     send: protectedProcedure
