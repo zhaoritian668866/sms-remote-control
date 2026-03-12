@@ -148,61 +148,13 @@ function AiConfigPanel() {
   const [simMessage, setSimMessage] = useState("");
   const [simHistory, setSimHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const [showSimulator, setShowSimulator] = useState(false);
-  const [showLogs, setShowLogs] = useState<"all" | "realtime" | "history" | null>(null);
-
-  const [isAutoLearning, setIsAutoLearning] = useState(false);
-
-  const { data: learningStats, isLoading: statsLoading, refetch: refetchStats } = trpc.ai.learningStats.useQuery(undefined, {
-    refetchInterval: learningEnabled ? 10000 : false, // Refresh stats every 10s when learning enabled
+  const { data: learningStats, isLoading: statsLoading } = trpc.ai.learningStats.useQuery(undefined, {
+    refetchInterval: learningEnabled ? 15000 : false, // Refresh stats every 15s when learning enabled
   });
-  const { data: learningLogs, refetch: refetchLogs } = trpc.ai.learningLogs.useQuery(
-    { type: showLogs || "all", limit: 30 },
-    { enabled: !!showLogs, refetchInterval: showLogs ? 3000 : false } // Poll logs every 3s when viewing
+  const { data: previewSamples } = trpc.ai.previewSamples.useQuery(
+    { limit: 5 },
+    { enabled: learningEnabled, refetchInterval: learningEnabled ? 30000 : false }
   );
-  const refreshLearningMutation = trpc.ai.refreshLearning.useMutation({
-    onSuccess: (result) => {
-      if (!isAutoLearning) {
-        toast.success(`实时学习完成，新增 ${result.newCount} 组，总计 ${result.learnedCount} 组`);
-      }
-      refetch(); refetchStats(); refetchLogs();
-    },
-    onError: (err: any) => {
-      if (!isAutoLearning) toast.error(err.message);
-    },
-  });
-
-  const learnHistoryMutation = trpc.ai.learnHistory.useMutation({
-    onSuccess: (result) => {
-      toast.success(`历史学习完成，新增 ${result.newCount} 组，总计 ${result.totalCount} 组`);
-      refetch(); refetchStats(); refetchLogs();
-    },
-    onError: (err: any) => toast.error(err.message),
-  });
-
-  const clearMemoryMutation = trpc.ai.clearMemory.useMutation({
-    onSuccess: () => {
-      toast.success("已清除所有AI学习记忆");
-      refetch(); refetchStats(); refetchLogs();
-    },
-    onError: (err: any) => toast.error(err.message),
-  });
-
-  // Auto-learning timer: trigger refreshLearning every 60s when learning is enabled
-  useEffect(() => {
-    if (!learningEnabled) {
-      setIsAutoLearning(false);
-      return;
-    }
-    setIsAutoLearning(true);
-    // Trigger immediately on enable
-    refreshLearningMutation.mutate();
-    const timer = setInterval(() => {
-      if (!refreshLearningMutation.isPending && !learnHistoryMutation.isPending) {
-        refreshLearningMutation.mutate();
-      }
-    }, 60000); // Every 60 seconds
-    return () => { clearInterval(timer); setIsAutoLearning(false); };
-  }, [learningEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const simulateMutation = trpc.ai.simulate.useMutation({
     onSuccess: (result) => {
@@ -404,18 +356,12 @@ function AiConfigPanel() {
 
         {learningEnabled && (
           <div className="space-y-4">
-            {/* Auto-monitor indicator */}
+            {/* Status indicator */}
             <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded">
               <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
               <span className="text-[11px] font-body text-green-400/80">
-                自动学习中 · 仅学习中国号码对话 · 每60秒自动学习
-                {refreshLearningMutation.isPending && " · 正在学习..."}
+                实时学习已开启 · AI回复时自动从messages表读取中国号码对话作为参考
               </span>
-              {learningStats && (
-                <span className="text-[10px] font-body text-green-400/60 ml-auto">
-                  已学习 {learningStats.learnedCount} 组
-                </span>
-              )}
             </div>
 
             {/* Learning Stats */}
@@ -450,52 +396,16 @@ function AiConfigPanel() {
               <div className="bg-background/40 border border-foreground/5 p-3 rounded">
                 <div className="flex items-center gap-1.5 mb-1">
                   <BookOpen className="w-3 h-3 text-amber-400/60" />
-                  <span className="text-[10px] font-body text-muted-foreground/50">已学习样本</span>
+                  <span className="text-[10px] font-body text-muted-foreground/50">已收到</span>
                 </div>
                 <p className="text-lg font-serif text-foreground">
-                  {learningStats?.learnedCount ?? 0}
+                  {statsLoading ? "-" : (learningStats?.totalIncoming ?? 0).toLocaleString()}
                 </p>
-                {learningStats?.lastLearnedAt && (
-                  <p className="text-[9px] font-body text-muted-foreground/30 mt-0.5">
-                    上次: {new Date(learningStats.lastLearnedAt).toLocaleString()}
-                  </p>
-                )}
               </div>
             </div>
 
-            {/* Action Buttons */}
+            {/* Action Button - only simulator */}
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                onClick={() => refreshLearningMutation.mutate()}
-                disabled={refreshLearningMutation.isPending}
-                className="h-8 px-4 bg-purple-500/20 border border-purple-500/30 text-purple-400/80 hover:bg-purple-500/30 text-xs font-body"
-              >
-                {refreshLearningMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-                实时学习
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => learnHistoryMutation.mutate({})}
-                disabled={learnHistoryMutation.isPending}
-                className="h-8 px-4 bg-blue-500/20 border border-blue-500/30 text-blue-400/80 hover:bg-blue-500/30 text-xs font-body"
-              >
-                {learnHistoryMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <History className="w-3 h-3 mr-1" />}
-                历史记录学习
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  if (confirm("确定要清除所有AI学习记忆吗？此操作不可恢复。")) {
-                    clearMemoryMutation.mutate();
-                  }
-                }}
-                disabled={clearMemoryMutation.isPending}
-                className="h-8 px-4 bg-red-500/20 border border-red-500/30 text-red-400/80 hover:bg-red-500/30 text-xs font-body"
-              >
-                {clearMemoryMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Trash2 className="w-3 h-3 mr-1" />}
-                清除记忆
-              </Button>
               <Button
                 size="sm"
                 onClick={() => setShowSimulator(!showSimulator)}
@@ -509,147 +419,6 @@ function AiConfigPanel() {
                 对话模拟
               </Button>
             </div>
-
-            {/* Learning Progress Logs Toggle */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-body text-muted-foreground/40 mr-1">学习进度：</span>
-              {(["all", "realtime", "history"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setShowLogs(showLogs === t ? null : t)}
-                  className={`text-[10px] px-2 py-0.5 rounded border font-body transition-colors ${
-                    showLogs === t
-                      ? "bg-foreground/10 border-foreground/20 text-foreground/70"
-                      : "border-foreground/5 text-muted-foreground/40 hover:text-foreground/60"
-                  }`}
-                >
-                  {t === "all" ? "全部记录" : t === "realtime" ? "实时学习" : "历史学习"}
-                </button>
-              ))}
-            </div>
-
-            {/* Learning Progress Log List */}
-            {showLogs && (
-              <div className="bg-background/30 border border-foreground/10 rounded p-3 space-y-2">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-3 h-3 text-foreground/40" />
-                    <span className="text-xs font-serif text-foreground/70">
-                      {showLogs === "all" ? "全部" : showLogs === "realtime" ? "实时" : "历史"}学习进度
-                    </span>
-                  </div>
-                  <button onClick={() => refetchLogs()} className="text-[10px] font-body text-muted-foreground/40 hover:text-foreground/60">刷新</button>
-                </div>
-                {!learningLogs || learningLogs.length === 0 ? (
-                  <div className="text-center py-4 text-[11px] font-body text-muted-foreground/30">暂无学习记录</div>
-                ) : (
-                  <div className="space-y-1.5 max-h-[350px] overflow-y-auto">
-                    {learningLogs.map((log: any) => {
-                      const isRunning = log.status === "running";
-                      const isFailed = log.status === "failed";
-                      const phoneList: string[] = log.phoneNumbers ? (() => { try { return JSON.parse(log.phoneNumbers); } catch { return []; } })() : [];
-                      return (
-                        <div key={log.id} className={`p-2.5 rounded border text-xs ${
-                          isRunning ? "bg-blue-500/5 border-blue-500/15" :
-                          isFailed ? "bg-red-500/5 border-red-500/15" :
-                          "bg-background/20 border-foreground/5"
-                        }`}>
-                          <div className="flex items-center justify-between mb-1.5">
-                            <div className="flex items-center gap-2">
-                              {isRunning ? (
-                                <Loader2 className="w-3 h-3 animate-spin text-blue-400" />
-                              ) : isFailed ? (
-                                <XCircle className="w-3 h-3 text-red-400" />
-                              ) : (
-                                <CheckCircle2 className="w-3 h-3 text-green-400" />
-                              )}
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-body ${
-                                log.type === "realtime" ? "bg-purple-500/15 text-purple-400/80" : "bg-blue-500/15 text-blue-400/80"
-                              }`}>
-                                {log.type === "realtime" ? "实时" : "历史"}
-                              </span>
-                              <span className="text-[10px] font-body text-muted-foreground/40">
-                                {new Date(log.startedAt).toLocaleString()}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {log.durationMs != null && (
-                                <span className="text-[9px] font-body text-muted-foreground/30">
-                                  {log.durationMs < 1000 ? `${log.durationMs}ms` : `${(log.durationMs / 1000).toFixed(1)}s`}
-                                </span>
-                              )}
-                              <span className={`text-[9px] font-body ${
-                                isRunning ? "text-blue-400/70" : isFailed ? "text-red-400/70" : "text-green-400/70"
-                              }`}>
-                                {isRunning ? "进行中..." : isFailed ? "失败" : "完成"}
-                              </span>
-                            </div>
-                          </div>
-                          {/* Always show progress stats - real-time for running, final for completed */}
-                          <div className="space-y-1.5">
-                            {isRunning && (log.scannedCount > 0 || log.newCount > 0) && (
-                              <div className="flex items-center gap-2 mb-1">
-                                <div className="flex-1 h-1.5 bg-foreground/5 rounded-full overflow-hidden">
-                                  <div className="h-full bg-blue-400/60 rounded-full animate-pulse" style={{ width: '100%' }} />
-                                </div>
-                                <span className="text-[10px] font-body text-blue-400/70 whitespace-nowrap">
-                                  已扫描 {log.scannedCount} 组 · 找到 {log.newCount} 组
-                                </span>
-                              </div>
-                            )}
-                            {isRunning && log.scannedCount === 0 && log.newCount === 0 && (
-                              <div className="flex items-center gap-2 mb-1">
-                                <div className="flex-1 h-1.5 bg-foreground/5 rounded-full overflow-hidden">
-                                  <div className="h-full bg-blue-400/40 rounded-full animate-pulse" style={{ width: '30%' }} />
-                                </div>
-                                <span className="text-[10px] font-body text-blue-400/60 whitespace-nowrap">正在加载数据...</span>
-                              </div>
-                            )}
-                            <div className="grid grid-cols-4 gap-2">
-                              <div className="text-center">
-                                <div className="text-[9px] font-body text-muted-foreground/30">扫描</div>
-                                <div className={`text-[11px] font-serif ${isRunning ? 'text-blue-400/80' : 'text-foreground/70'}`}>{log.scannedCount}</div>
-                              </div>
-                              <div className="text-center">
-                                <div className="text-[9px] font-body text-muted-foreground/30">新增</div>
-                                <div className={`text-[11px] font-serif ${isRunning ? 'text-blue-400/80' : 'text-green-400/80'}`}>{log.newCount}</div>
-                              </div>
-                              <div className="text-center">
-                                <div className="text-[9px] font-body text-muted-foreground/30">重复</div>
-                                <div className="text-[11px] font-serif text-amber-400/80">{log.duplicateCount}</div>
-                              </div>
-                              <div className="text-center">
-                                <div className="text-[9px] font-body text-muted-foreground/30">总计</div>
-                                <div className="text-[11px] font-serif text-foreground/70">{log.totalCount}</div>
-                              </div>
-                            </div>
-                          </div>
-                          {isFailed && log.errorMessage && (
-                            <div className="text-[10px] font-body text-red-400/60 mt-1 px-1">
-                              错误: {log.errorMessage}
-                            </div>
-                          )}
-                          {phoneList.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {phoneList.slice(0, 8).map((phone: string, i: number) => (
-                                <span key={i} className="text-[9px] px-1.5 py-0.5 bg-foreground/5 rounded font-body text-muted-foreground/40">
-                                  {phone}
-                                </span>
-                              ))}
-                              {phoneList.length > 8 && (
-                                <span className="text-[9px] px-1.5 py-0.5 font-body text-muted-foreground/30">
-                                  +{phoneList.length - 8} 更多
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Conversation Simulator */}
             {showSimulator && (
@@ -743,14 +512,14 @@ function AiConfigPanel() {
             )}
 
             {/* Recent Samples Preview */}
-            {learningStats?.recentSamples && learningStats.recentSamples.length > 0 && (
+            {previewSamples && previewSamples.length > 0 && (
               <div>
                 <div className="flex items-center gap-1.5 mb-2">
                   <MessageSquare className="w-3 h-3 text-foreground/40" />
-                  <span className="text-xs font-body text-muted-foreground/50">最近学习的中国号码对话样本</span>
+                  <span className="text-xs font-body text-muted-foreground/50">中国号码对话样本预览（AI回复时实时参考）</span>
                 </div>
                 <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                  {learningStats.recentSamples.slice(0, 3).map((sample: any, idx: number) => (
+                  {previewSamples.slice(0, 5).map((sample: any, idx: number) => (
                     <div key={idx} className="bg-background/30 border border-foreground/5 p-3 rounded text-xs">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-[10px] font-body text-muted-foreground/40">

@@ -84,16 +84,7 @@ import {
   getAiConversationsByUser,
   getAiConversationsByDevice,
   getAiLearningStats,
-  fetchConversationSamples,
-  updateAiLearningState,
-  clearAiLearningMemory,
-  fetchHistoricalSamples,
-  createLearningLog,
-  updateLearningLog,
-  updateLearningLogProgress,
-  getLearningLogs,
-  getLearningLogsByType,
-  cleanupStaleLearningLogs,
+  fetchRecentChineseSamples,
 } from "./db";
 import { generateAiReply, testAiConnection, simulateConversation } from "./aiEngine";
 import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest } from "./wsManager";
@@ -1280,8 +1271,8 @@ export const appRouter = router({
     getConfig: superadminProcedure.query(async () => {
       const config = await getAiConfig();
       if (!config) return null;
-      // Exclude learnedSamples from response to prevent large JSON data leak to frontend
-      const { learnedSamples, ...rest } = config;
+      // Exclude learnedSamples from response
+      const { learnedSamples: _ls, ...rest } = config;
       return rest;
     }),
 
@@ -1306,126 +1297,12 @@ export const appRouter = router({
       return getAiLearningStats();
     }),
 
-    // Superadmin: Toggle learning and refresh samples (real-time monitoring)
-    refreshLearning: superadminProcedure.mutation(async () => {
-      // Cleanup stale logs first
-      await cleanupStaleLearningLogs();
-      const startTime = Date.now();
-      const logId = await createLearningLog("realtime");
-      try {
-        const samples = await fetchConversationSamples(200);
-        const config = await getAiConfig();
-        let existingSamples: any[] = [];
-        try {
-          if (config?.learnedSamples) existingSamples = JSON.parse(config.learnedSamples);
-        } catch {}
-        const existingKeys = new Set(existingSamples.map((s: any) => `${s.deviceId}-${s.phoneNumber}`));
-        const newSamples = samples.filter(s => !existingKeys.has(`${s.deviceId}-${s.phoneNumber}`));
-        const merged = [...existingSamples, ...newSamples];
-        await updateAiLearningState(merged.length, JSON.stringify(merged));
-        const phoneNumbers = Array.from(new Set(samples.map(s => s.phoneNumber)));
-        if (logId) {
-          await updateLearningLog(logId, {
-            status: "completed",
-            newCount: newSamples.length,
-            totalCount: merged.length,
-            scannedCount: samples.length,
-            filteredCount: 0,
-            duplicateCount: samples.length - newSamples.length,
-            phoneNumbers,
-            durationMs: Date.now() - startTime,
-          });
-        }
-        return { success: true, learnedCount: merged.length, newCount: newSamples.length };
-      } catch (error: any) {
-        if (logId) {
-          await updateLearningLog(logId, {
-            status: "failed",
-            errorMessage: error.message || "实时学习失败",
-            durationMs: Date.now() - startTime,
-          });
-        }
-        throw error;
-      }
-    }),
-
-    // Superadmin: Learn from historical records (batch) with real-time progress
-    learnHistory: superadminProcedure
-      .input(z.object({
-        beforeTimestamp: z.number().optional(),
-        limit: z.number().min(1).max(2000).optional(),
-      }).optional().default({}))
-      .mutation(async ({ input }) => {
-        await cleanupStaleLearningLogs();
-        const startTime = Date.now();
-        const logId = await createLearningLog("history");
-        try {
-          const limit = input?.limit ?? 500;
-          // Progress callback: update log in real-time as we scan
-          const onProgress = logId ? async (scanned: number, found: number) => {
-            await updateLearningLogProgress(logId, {
-              scannedCount: scanned,
-              newCount: found,
-            });
-          } : undefined;
-
-          const samples = await fetchHistoricalSamples(input?.beforeTimestamp, limit, onProgress);
-          const config = await getAiConfig();
-          let existingSamples: any[] = [];
-          try {
-            if (config?.learnedSamples) existingSamples = JSON.parse(config.learnedSamples);
-          } catch {}
-          const existingKeys = new Set(existingSamples.map((s: any) => `${s.deviceId}-${s.phoneNumber}`));
-          const newSamples = samples.filter(s => !existingKeys.has(`${s.deviceId}-${s.phoneNumber}`));
-          const merged = [...existingSamples, ...newSamples];
-          if (merged.length > 0) {
-            await updateAiLearningState(merged.length, JSON.stringify(merged));
-          }
-          const phoneNumbers = Array.from(new Set(newSamples.map(s => s.phoneNumber)));
-          if (logId) {
-            await updateLearningLog(logId, {
-              status: "completed",
-              newCount: newSamples.length,
-              totalCount: merged.length,
-              scannedCount: samples.length,
-              filteredCount: 0,
-              duplicateCount: samples.length - newSamples.length,
-              phoneNumbers,
-              durationMs: Date.now() - startTime,
-            });
-          }
-          return { success: true, newCount: newSamples.length, totalCount: merged.length };
-        } catch (error: any) {
-          if (logId) {
-            await updateLearningLog(logId, {
-              status: "failed",
-              errorMessage: error.message || "历史学习失败",
-              durationMs: Date.now() - startTime,
-            });
-          }
-          throw error;
-        }
-      }),
-
-    // Superadmin: Get learning logs (progress visualization)
-    learningLogs: superadminProcedure
-      .input(z.object({
-        type: z.enum(["realtime", "history", "all"]).optional(),
-        limit: z.number().min(1).max(100).optional(),
-      }).optional().default({}))
+    // Superadmin: Preview recent Chinese conversation samples (direct from messages table)
+    previewSamples: superadminProcedure
+      .input(z.object({ limit: z.number().min(1).max(20).optional() }).optional().default({}))
       .query(async ({ input }) => {
-        const limit = input?.limit ?? 20;
-        if (input?.type && input.type !== "all") {
-          return getLearningLogsByType(input.type, limit);
-        }
-        return getLearningLogs(limit);
+        return fetchRecentChineseSamples(input?.limit ?? 5);
       }),
-
-    // Superadmin: Clear all learned memory
-    clearMemory: superadminProcedure.mutation(async () => {
-      await clearAiLearningMemory();
-      return { success: true };
-    }),
 
     // Superadmin: Simulate conversation (test AI reply quality)
     simulate: superadminProcedure
@@ -1441,10 +1318,18 @@ export const appRouter = router({
         if (!config || !config.apiUrl || !config.apiKey || !config.modelName) {
           return { success: false, error: "请先配置AI接口" };
         }
+        // Fetch fresh samples directly from messages table for simulation
+        let samplesJson: string | null = null;
+        if (config.learningEnabled) {
+          const samples = await fetchRecentChineseSamples(5);
+          if (samples.length > 0) {
+            samplesJson = JSON.stringify(samples);
+          }
+        }
         const result = await simulateConversation(
           config.apiUrl, config.apiKey, config.modelName,
           input.message, input.history || [],
-          config.learningEnabled ? config.learnedSamples : null,
+          samplesJson,
           config.bannedWords, config.bannedWordReplacements,
         );
         return result;

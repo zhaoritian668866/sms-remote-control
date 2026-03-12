@@ -1,0 +1,9 @@
+{
+  "query": "CREATE INDEX IF NOT EXISTS idx_messages_phone_ts ON messages (phoneNumber, smsTimestamp DESC); CREATE INDEX IF NOT EXISTS idx_messages_device_phone ON messages (deviceId, phoneNumber); CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages (smsTimestamp DESC);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user r4xdFagEgpfWtwT.root --database 4rTHqCojuh9Vnb7GsHmjrf --execute CREATE INDEX IF NOT EXISTS idx_messages_phone_ts ON messages (phoneNumber, smsTimestamp DESC); CREATE INDEX IF NOT EXISTS idx_messages_device_phone ON messages (deviceId, phoneNumber); CREATE INDEX IF NOT EXISTS idx_messages_ts ON messages (smsTimestamp DESC);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 3441
+}

@@ -11,7 +11,7 @@
  * Uses OpenAI-compatible API (works with DeepSeek, Qwen, etc.)
  */
 
-import { getAiConfig, getAiUserSettings, getAiConversation, upsertAiConversation, fetchConversationSamples, updateAiLearningState, type LearnedSample } from "./db";
+import { getAiConfig, getAiUserSettings, getAiConversation, upsertAiConversation, fetchRecentChineseSamples, type ConversationSample } from "./db";
 
 // ─── SMS Banned Words Filter ───
 
@@ -296,27 +296,13 @@ export async function generateAiReply(
 
     const newRound = conversation.currentRound + 1;
 
-    // 6. Build learned examples from real conversations if learning is enabled
+    // 6. Build learned examples from real conversations (direct from DB, always fresh)
     let learnedExamples = '';
     if (config.learningEnabled) {
       try {
-        let samples: LearnedSample[] = [];
-        // Use cached samples if available and recent (< 1 hour)
-        if (config.learnedSamples && config.lastLearnedAt) {
-          const cacheAge = Date.now() - new Date(config.lastLearnedAt).getTime();
-          if (cacheAge < 3600000) { // 1 hour cache
-            samples = JSON.parse(config.learnedSamples);
-          }
-        }
-        // Fetch fresh samples if cache is stale
-        if (samples.length === 0) {
-          samples = await fetchConversationSamples(20);
-          if (samples.length > 0) {
-            await updateAiLearningState(samples.length, JSON.stringify(samples));
-          }
-        }
-        // Build examples text from top 3 random samples
+        const samples = await fetchRecentChineseSamples(5);
         if (samples.length > 0) {
+          // Pick 3 random samples
           const shuffled = samples.sort(() => Math.random() - 0.5).slice(0, 3);
           const exampleTexts = shuffled.map((s, i) => {
             const msgs = s.messages.slice(-8).map(m => 
@@ -431,16 +417,16 @@ export async function simulateConversation(
   modelName: string,
   userMessage: string,
   history: Array<{ role: string; content: string }>,
-  learnedSamplesJson: string | null | undefined,
+  samplesJson: string | null | undefined,
   bannedWordsStr: string | null | undefined,
   bannedReplacementsStr: string | null | undefined,
 ): Promise<{ success: boolean; reply?: string; error?: string }> {
   try {
     // Build learned examples if available
     let learnedExamples = '';
-    if (learnedSamplesJson) {
+    if (samplesJson) {
       try {
-        const samples: LearnedSample[] = JSON.parse(learnedSamplesJson);
+        const samples: ConversationSample[] = JSON.parse(samplesJson);
         if (samples.length > 0) {
           const shuffled = samples.sort(() => Math.random() - 0.5).slice(0, 3);
           const exampleTexts = shuffled.map((s, i) => {

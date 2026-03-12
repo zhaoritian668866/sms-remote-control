@@ -1441,37 +1441,19 @@ export async function getAiConversationsByUser(userId: number): Promise<AiConver
     .orderBy(desc(aiConversations.updatedAt));
 }
 
-// ─── AI Learning: Read real conversations from messages table ───
+// ─── AI Learning: Direct query from messages table ───
 
-export interface LearnedSample {
-  deviceId: number;
+export interface ConversationSample {
   phoneNumber: string;
-  messages: Array<{ direction: string; body: string; timestamp: number }>;
-  learnedAt: number;
+  messages: Array<{ direction: string; body: string }>;
 }
 
 /**
- * Check if a phone number is a Chinese number (+86 or 1xx pattern).
+ * Fetch a few recent Chinese-number conversations directly from messages table.
+ * Lightweight query: only gets recent messages, groups in memory, returns quickly.
+ * Used by AI engine at reply time - no caching, no storage, always fresh data.
  */
-function isChineseNumber(phone: string): boolean {
-  const cleaned = phone.replace(/[\s\-()]/g, '');
-  // +86 prefix
-  if (cleaned.startsWith('+86')) return true;
-  // 86 prefix without +
-  if (cleaned.startsWith('86') && cleaned.length >= 13) return true;
-  // Direct 11-digit Chinese mobile (1xx xxxx xxxx)
-  if (/^1[3-9]\d{9}$/.test(cleaned)) return true;
-  // Numbers without country code that look Chinese
-  if (cleaned.length === 11 && cleaned.startsWith('1')) return true;
-  return false;
-}
-
-/**
- * Fetch real human conversation samples from the messages table (BATCH optimized).
- * Uses a single query to get all messages, then groups in memory.
- * Only includes Chinese phone numbers, filters out overseas test numbers.
- */
-export async function fetchConversationSamples(limit: number = 50): Promise<LearnedSample[]> {
+export async function fetchRecentChineseSamples(limit: number = 5): Promise<ConversationSample[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -1483,45 +1465,47 @@ export async function fetchConversationSamples(limit: number = 50): Promise<Lear
     OR (LENGTH(${messages.phoneNumber}) = 11 AND ${messages.phoneNumber} LIKE '1%')
   )`;
 
-  // Single batch query: get all Chinese number messages, ordered by time
-  const allMessages = await db.select({
-    deviceId: messages.deviceId,
+  // Step 1: Find recent phone numbers that have BOTH incoming and outgoing messages
+  const threads = await db.select({
     phoneNumber: messages.phoneNumber,
-    direction: messages.direction,
-    body: messages.body,
-    smsTimestamp: messages.smsTimestamp,
   }).from(messages)
     .where(cnFilter)
-    .orderBy(desc(messages.smsTimestamp))
-    .limit(5000); // Cap at 5000 messages for memory safety
+    .groupBy(messages.phoneNumber)
+    .having(
+      and(
+        sql`SUM(CASE WHEN ${messages.direction} = 'incoming' THEN 1 ELSE 0 END) > 0`,
+        sql`SUM(CASE WHEN ${messages.direction} = 'outgoing' THEN 1 ELSE 0 END) > 0`,
+      )
+    )
+    .orderBy(sql`MAX(${messages.smsTimestamp}) DESC`)
+    .limit(limit * 2); // Get extra in case some are too short
 
-  // Group by deviceId+phoneNumber in memory
-  type MsgRow = { deviceId: number; phoneNumber: string; direction: "incoming" | "outgoing"; body: string; smsTimestamp: number };
-  const threadMap = new Map<string, MsgRow[]>();
-  for (const msg of allMessages) {
-    const key = `${msg.deviceId}-${msg.phoneNumber}`;
-    if (!threadMap.has(key)) threadMap.set(key, []);
-    const thread = threadMap.get(key)!;
-    if (thread.length < 20) thread.push(msg);
-  }
+  if (threads.length === 0) return [];
 
-  const samples: LearnedSample[] = [];
-  const entries = Array.from(threadMap.entries());
-  for (const [key, thread] of entries) {
-    const hasIncoming = thread.some((m: MsgRow) => m.direction === 'incoming');
-    const hasOutgoing = thread.some((m: MsgRow) => m.direction === 'outgoing');
-    if (!hasIncoming || !hasOutgoing) continue;
+  // Step 2: For each thread, get the last 10 messages
+  const samples: ConversationSample[] = [];
+  for (const thread of threads) {
+    const threadMsgs = await db.select({
+      direction: messages.direction,
+      body: messages.body,
+      smsTimestamp: messages.smsTimestamp,
+    }).from(messages)
+      .where(and(
+        eq(messages.phoneNumber, thread.phoneNumber),
+        cnFilter,
+      ))
+      .orderBy(desc(messages.smsTimestamp))
+      .limit(10);
 
-    samples.push({
-      deviceId: thread[0].deviceId,
-      phoneNumber: thread[0].phoneNumber,
-      messages: thread.reverse().map((m: MsgRow) => ({
-        direction: m.direction,
-        body: m.body,
-        timestamp: m.smsTimestamp,
-      })),
-      learnedAt: Date.now(),
-    });
+    if (threadMsgs.length >= 2) {
+      samples.push({
+        phoneNumber: thread.phoneNumber,
+        messages: threadMsgs.reverse().map(m => ({
+          direction: m.direction,
+          body: m.body,
+        })),
+      });
+    }
     if (samples.length >= limit) break;
   }
 
@@ -1529,26 +1513,25 @@ export async function fetchConversationSamples(limit: number = 50): Promise<Lear
 }
 
 /**
- * Get learning statistics: total conversations with human replies, total messages, etc.
- * Only counts Chinese phone numbers.
+ * Get AI learning statistics: total conversations with human replies, total messages, etc.
+ * Only counts Chinese phone numbers. Lightweight queries with indexes.
  */
 export async function getAiLearningStats(): Promise<{
   totalConversations: number;
   totalMessages: number;
   totalOutgoing: number;
   totalIncoming: number;
-  recentSamples: LearnedSample[];
-  learnedCount: number;
-  lastLearnedAt: Date | null;
+  recentSamples: ConversationSample[];
 }> {
   const db = await getDb();
-  if (!db) return { totalConversations: 0, totalMessages: 0, totalOutgoing: 0, totalIncoming: 0, recentSamples: [], learnedCount: 0, lastLearnedAt: null };
+  if (!db) return { totalConversations: 0, totalMessages: 0, totalOutgoing: 0, totalIncoming: 0, recentSamples: [] };
 
-  // Chinese number SQL filter: starts with +86, 86, or 11-digit starting with 1
+  // Chinese number SQL filter
   const cnFilter = sql`(
     ${messages.phoneNumber} LIKE '+86%'
     OR (${messages.phoneNumber} LIKE '86%' AND LENGTH(${messages.phoneNumber}) >= 13)
     OR (${messages.phoneNumber} REGEXP '^1[3-9][0-9]{9}$')
+    OR (LENGTH(${messages.phoneNumber}) = 11 AND ${messages.phoneNumber} LIKE '1%')
   )`;
 
   // Total message counts (Chinese numbers only)
@@ -1558,7 +1541,7 @@ export async function getAiLearningStats(): Promise<{
     incoming: sql<number>`SUM(CASE WHEN ${messages.direction} = 'incoming' THEN 1 ELSE 0 END)`,
   }).from(messages).where(cnFilter);
 
-  // Count unique conversations that have both incoming and outgoing (Chinese numbers only)
+  // Count unique conversations that have both incoming and outgoing
   const convResult = await db.select({
     count: sql<number>`COUNT(*)`,
   }).from(
@@ -1576,11 +1559,8 @@ export async function getAiLearningStats(): Promise<{
       ).as('conv_threads')
   );
 
-  // Get 5 most recent samples for display (already filtered by Chinese numbers)
-  const recentSamples = await fetchConversationSamples(5);
-
-  // Get learned state from config
-  const config = await getAiConfig();
+  // Get 3 most recent samples for preview
+  const recentSamples = await fetchRecentChineseSamples(3);
 
   return {
     totalConversations: convResult[0]?.count ?? 0,
@@ -1588,233 +1568,7 @@ export async function getAiLearningStats(): Promise<{
     totalOutgoing: totalResult[0]?.outgoing ?? 0,
     totalIncoming: totalResult[0]?.incoming ?? 0,
     recentSamples,
-    learnedCount: config?.learnedCount ?? 0,
-    lastLearnedAt: config?.lastLearnedAt ?? null,
   };
 }
 
-/**
- * Update AI config learning state
- */
-export async function updateAiLearningState(learnedCount: number, learnedSamples: string): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-  const existing = await getAiConfig();
-  if (existing) {
-    await db.update(aiConfig).set({
-      learnedCount,
-      learnedSamples,
-      lastLearnedAt: new Date(),
-    }).where(eq(aiConfig.id, existing.id));
-  }
-}
 
-/**
- * Clear all learned memory (reset learnedCount, learnedSamples, lastLearnedAt)
- */
-export async function clearAiLearningMemory(): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-  const existing = await getAiConfig();
-  if (existing) {
-    await db.update(aiConfig).set({
-      learnedCount: 0,
-      learnedSamples: null,
-      lastLearnedAt: null,
-    }).where(eq(aiConfig.id, existing.id));
-  }
-}
-
-/**
- * Fetch historical conversation samples for batch learning (BATCH optimized).
- * Uses a single query, groups in memory. Chinese numbers only.
- * Supports progress callback for real-time progress updates.
- */
-export async function fetchHistoricalSamples(
-  beforeTimestamp?: number,
-  limit: number = 500,
-  onProgress?: (scanned: number, found: number) => Promise<void>,
-): Promise<LearnedSample[]> {
-  const db = await getDb();
-  if (!db) return [];
-
-  // Chinese number SQL filter
-  const cnFilter = sql`(
-    ${messages.phoneNumber} LIKE '+86%'
-    OR (${messages.phoneNumber} LIKE '86%' AND LENGTH(${messages.phoneNumber}) >= 13)
-    OR (${messages.phoneNumber} REGEXP '^1[3-9][0-9]{9}$')
-    OR (LENGTH(${messages.phoneNumber}) = 11 AND ${messages.phoneNumber} LIKE '1%')
-  )`;
-
-  const conditions: any[] = [cnFilter];
-  if (beforeTimestamp) {
-    conditions.push(lte(messages.smsTimestamp, beforeTimestamp));
-  }
-
-  // Single batch query: get all Chinese number messages
-  const allMessages = await db.select({
-    deviceId: messages.deviceId,
-    phoneNumber: messages.phoneNumber,
-    direction: messages.direction,
-    body: messages.body,
-    smsTimestamp: messages.smsTimestamp,
-  }).from(messages)
-    .where(and(...conditions))
-    .orderBy(desc(messages.smsTimestamp))
-    .limit(20000); // Allow more for history
-
-  // Group by deviceId+phoneNumber in memory
-  type HistMsgRow = { deviceId: number; phoneNumber: string; direction: "incoming" | "outgoing"; body: string; smsTimestamp: number };
-  const threadMap = new Map<string, HistMsgRow[]>();
-  for (const msg of allMessages) {
-    const key = `${msg.deviceId}-${msg.phoneNumber}`;
-    if (!threadMap.has(key)) threadMap.set(key, []);
-    const thread = threadMap.get(key)!;
-    if (thread.length < 20) thread.push(msg);
-  }
-
-  const samples: LearnedSample[] = [];
-  let scannedCount = 0;
-  const entries = Array.from(threadMap.entries());
-  for (const [key, thread] of entries) {
-    scannedCount++;
-    const hasIncoming = thread.some((m: HistMsgRow) => m.direction === 'incoming');
-    const hasOutgoing = thread.some((m: HistMsgRow) => m.direction === 'outgoing');
-    if (!hasIncoming || !hasOutgoing) continue;
-
-    samples.push({
-      deviceId: thread[0].deviceId,
-      phoneNumber: thread[0].phoneNumber,
-      messages: thread.reverse().map((m: HistMsgRow) => ({
-        direction: m.direction,
-        body: m.body,
-        timestamp: m.smsTimestamp,
-      })),
-      learnedAt: Date.now(),
-    });
-
-    // Report progress every 10 found samples
-    if (onProgress && samples.length % 10 === 0) {
-      await onProgress(scannedCount, samples.length);
-    }
-
-    if (samples.length >= limit) break;
-  }
-
-  // Final progress report
-  if (onProgress) {
-    await onProgress(scannedCount, samples.length);
-  }
-
-  return samples;
-}
-
-// ─── AI Learning Logs ───
-
-/**
- * Create a new learning log entry (status: running)
- */
-export async function createLearningLog(type: "realtime" | "history"): Promise<number | null> {
-  const db = await getDb();
-  if (!db) return null;
-  const result = await db.insert(aiLearningLogs).values({
-    type,
-    status: "running",
-    startedAt: new Date(),
-  });
-  return (result as any)[0]?.insertId ?? null;
-}
-
-/**
- * Update a learning log with results
- */
-export async function updateLearningLog(
-  id: number,
-  data: {
-    status: "completed" | "failed";
-    newCount?: number;
-    totalCount?: number;
-    scannedCount?: number;
-    filteredCount?: number;
-    duplicateCount?: number;
-    phoneNumbers?: string[];
-    errorMessage?: string;
-    durationMs?: number;
-  }
-): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(aiLearningLogs).set({
-    status: data.status,
-    newCount: data.newCount ?? 0,
-    totalCount: data.totalCount ?? 0,
-    scannedCount: data.scannedCount ?? 0,
-    filteredCount: data.filteredCount ?? 0,
-    duplicateCount: data.duplicateCount ?? 0,
-    phoneNumbers: data.phoneNumbers ? JSON.stringify(data.phoneNumbers) : null,
-    errorMessage: data.errorMessage ?? null,
-    durationMs: data.durationMs ?? null,
-    completedAt: new Date(),
-  }).where(eq(aiLearningLogs.id, id));
-}
-
-/**
- * Get recent learning logs for display
- */
-export async function getLearningLogs(limit: number = 20): Promise<AiLearningLog[]> {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(aiLearningLogs)
-    .orderBy(desc(aiLearningLogs.startedAt))
-    .limit(limit);
-}
-
-/**
- * Get learning logs by type
- */
-export async function getLearningLogsByType(type: "realtime" | "history", limit: number = 20): Promise<AiLearningLog[]> {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(aiLearningLogs)
-    .where(eq(aiLearningLogs.type, type))
-    .orderBy(desc(aiLearningLogs.startedAt))
-    .limit(limit);
-}
-
-/**
- * Cleanup stale learning logs that have been "running" for more than 5 minutes.
- * Marks them as failed with a timeout error.
- */
-export async function cleanupStaleLearningLogs(): Promise<number> {
-  const db = await getDb();
-  if (!db) return 0;
-  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
-  const result = await db.update(aiLearningLogs).set({
-    status: "failed",
-    errorMessage: "学习任务超时（超过5分钟未完成）",
-    completedAt: new Date(),
-  }).where(
-    and(
-      eq(aiLearningLogs.status, "running"),
-      lte(aiLearningLogs.startedAt, fiveMinAgo),
-    )
-  );
-  return (result as any)[0]?.affectedRows ?? 0;
-}
-
-/**
- * Partially update a learning log's progress (while still running).
- */
-export async function updateLearningLogProgress(
-  id: number,
-  data: { scannedCount: number; newCount: number; totalCount?: number; duplicateCount?: number },
-): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(aiLearningLogs).set({
-    scannedCount: data.scannedCount,
-    newCount: data.newCount,
-    totalCount: data.totalCount ?? 0,
-    duplicateCount: data.duplicateCount ?? 0,
-  }).where(eq(aiLearningLogs.id, id));
-}
