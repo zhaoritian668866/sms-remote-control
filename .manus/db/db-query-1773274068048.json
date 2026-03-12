@@ -1,0 +1,18 @@
+{
+  "query": "SELECT id, username, openId, name, role, LEFT(passwordHash, 30) as pwd_prefix FROM users WHERE role = 'superadmin' LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user r4xdFagEgpfWtwT.root --database 4rTHqCojuh9Vnb7GsHmjrf --execute SELECT id, username, openId, name, role, LEFT(passwordHash, 30) as pwd_prefix FROM users WHERE role = 'superadmin' LIMIT 5;",
+  "rows": [
+    {
+      "id": "120229",
+      "username": "xiaoqiadmin",
+      "openId": "mzzw6Zs4U5zIOY-7",
+      "name": "超级管理员",
+      "role": "superadmin",
+      "pwd_prefix": "$2b$10$hxitQ1Ppe.KjTucsikvwB.q"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tusername\topenId\tname\trole\tpwd_prefix\n120229\txiaoqiadmin\tmzzw6Zs4U5zIOY-7\t超级管理员\tsuperadmin\t$2b$10$hxitQ1Ppe.KjTucsikvwB.q\n",
+  "stderr": "",
+  "execution_time_ms": 1685
+}

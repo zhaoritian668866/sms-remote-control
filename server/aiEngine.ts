@@ -11,7 +11,7 @@
  * Uses OpenAI-compatible API (works with DeepSeek, Qwen, etc.)
  */
 
-import { getAiConfig, getAiUserSettings, getAiConversation, upsertAiConversation } from "./db";
+import { getAiConfig, getAiUserSettings, getAiConversation, upsertAiConversation, fetchConversationSamples, updateAiLearningState, type LearnedSample } from "./db";
 
 // ─── SMS Banned Words Filter ───
 
@@ -59,6 +59,7 @@ function buildSystemPrompt(settings: {
   customerJob?: string | null;
   customerIncome?: string | null;
   customerMaritalStatus?: string | null;
+  learnedExamples?: string;
 }): string {
   const { personaName, targetApp, targetAppId, currentRound, customerAge, customerJob, customerIncome, customerMaritalStatus } = settings;
   
@@ -112,6 +113,7 @@ function buildSystemPrompt(settings: {
   }
 
   return `你是一个名叫"${personaName}"的${personaAge}岁女性，正在通过短信和一个潜在的相亲对象聊天。
+${settings.learnedExamples || ''}
 
 【你的人设】
 - 名字：${personaName}
@@ -294,7 +296,42 @@ export async function generateAiReply(
 
     const newRound = conversation.currentRound + 1;
 
-    // 6. Build system prompt with current strategy
+    // 6. Build learned examples from real conversations if learning is enabled
+    let learnedExamples = '';
+    if (config.learningEnabled) {
+      try {
+        let samples: LearnedSample[] = [];
+        // Use cached samples if available and recent (< 1 hour)
+        if (config.learnedSamples && config.lastLearnedAt) {
+          const cacheAge = Date.now() - new Date(config.lastLearnedAt).getTime();
+          if (cacheAge < 3600000) { // 1 hour cache
+            samples = JSON.parse(config.learnedSamples);
+          }
+        }
+        // Fetch fresh samples if cache is stale
+        if (samples.length === 0) {
+          samples = await fetchConversationSamples(20);
+          if (samples.length > 0) {
+            await updateAiLearningState(samples.length, JSON.stringify(samples));
+          }
+        }
+        // Build examples text from top 3 random samples
+        if (samples.length > 0) {
+          const shuffled = samples.sort(() => Math.random() - 0.5).slice(0, 3);
+          const exampleTexts = shuffled.map((s, i) => {
+            const msgs = s.messages.slice(-8).map(m => 
+              `${m.direction === 'outgoing' ? '我方' : '客户'}: ${m.body}`
+            ).join('\n');
+            return `对话样本${i + 1}:\n${msgs}`;
+          }).join('\n\n');
+          learnedExamples = `\n【真实对话参考】\n以下是我方操作人员的真实聊天记录，请学习其中的聊天风格、语气和话术技巧，并融入你的回复中：\n\n${exampleTexts}\n`;
+        }
+      } catch (e) {
+        console.error('[AI Engine] Failed to load learned samples:', e);
+      }
+    }
+
+    // 7. Build system prompt with current strategy
     const systemPrompt = buildSystemPrompt({
       personaName: userSettings.personaName,
       targetApp: userSettings.targetApp,
@@ -304,6 +341,7 @@ export async function generateAiReply(
       customerJob: conversation.customerJob,
       customerIncome: conversation.customerIncome,
       customerMaritalStatus: conversation.customerMaritalStatus,
+      learnedExamples,
     });
 
     // 7. Call LLM

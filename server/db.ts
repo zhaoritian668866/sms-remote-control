@@ -1312,7 +1312,7 @@ export async function getAiConfig(): Promise<AiConfig | undefined> {
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function upsertAiConfig(data: { apiUrl: string; apiKey: string; modelName: string; isEnabled: boolean; bannedWords?: string; bannedWordReplacements?: string }): Promise<void> {
+export async function upsertAiConfig(data: { apiUrl: string; apiKey: string; modelName: string; isEnabled: boolean; bannedWords?: string; bannedWordReplacements?: string; learningEnabled?: boolean }): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const existing = await getAiConfig();
@@ -1324,6 +1324,7 @@ export async function upsertAiConfig(data: { apiUrl: string; apiKey: string; mod
       isEnabled: data.isEnabled,
       bannedWords: data.bannedWords ?? null,
       bannedWordReplacements: data.bannedWordReplacements ?? null,
+      learningEnabled: data.learningEnabled ?? existing.learningEnabled,
     }).where(eq(aiConfig.id, existing.id));
   } else {
     await db.insert(aiConfig).values({
@@ -1333,6 +1334,7 @@ export async function upsertAiConfig(data: { apiUrl: string; apiKey: string; mod
       isEnabled: data.isEnabled,
       bannedWords: data.bannedWords ?? null,
       bannedWordReplacements: data.bannedWordReplacements ?? null,
+      learningEnabled: data.learningEnabled ?? false,
     });
   }
 }
@@ -1437,4 +1439,133 @@ export async function getAiConversationsByUser(userId: number): Promise<AiConver
   return db.select().from(aiConversations)
     .where(eq(aiConversations.userId, userId))
     .orderBy(desc(aiConversations.updatedAt));
+}
+
+// ─── AI Learning: Read real conversations from messages table ───
+
+export interface LearnedSample {
+  deviceId: number;
+  phoneNumber: string;
+  messages: Array<{ direction: string; body: string; timestamp: number }>;
+  learnedAt: number;
+}
+
+/**
+ * Fetch real human conversation samples from the messages table.
+ * Groups messages by device+phoneNumber into conversation threads,
+ * only includes conversations with both incoming and outgoing messages (real human replies).
+ */
+export async function fetchConversationSamples(limit: number = 50): Promise<LearnedSample[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Get recent outgoing messages (human replies) to find active conversations
+  const recentOutgoing = await db.select({
+    deviceId: messages.deviceId,
+    phoneNumber: messages.phoneNumber,
+  }).from(messages)
+    .where(eq(messages.direction, "outgoing"))
+    .groupBy(messages.deviceId, messages.phoneNumber)
+    .orderBy(desc(sql`MAX(${messages.smsTimestamp})`))
+    .limit(limit);
+
+  const samples: LearnedSample[] = [];
+
+  for (const conv of recentOutgoing) {
+    // Get the last 20 messages for this conversation thread
+    const thread = await db.select({
+      direction: messages.direction,
+      body: messages.body,
+      smsTimestamp: messages.smsTimestamp,
+    }).from(messages)
+      .where(and(
+        eq(messages.deviceId, conv.deviceId),
+        eq(messages.phoneNumber, conv.phoneNumber),
+      ))
+      .orderBy(desc(messages.smsTimestamp))
+      .limit(20);
+
+    // Only include if there are both incoming and outgoing
+    const hasIncoming = thread.some(m => m.direction === 'incoming');
+    const hasOutgoing = thread.some(m => m.direction === 'outgoing');
+    if (hasIncoming && hasOutgoing) {
+      samples.push({
+        deviceId: conv.deviceId,
+        phoneNumber: conv.phoneNumber,
+        messages: thread.reverse().map(m => ({
+          direction: m.direction,
+          body: m.body,
+          timestamp: m.smsTimestamp,
+        })),
+        learnedAt: Date.now(),
+      });
+    }
+  }
+
+  return samples;
+}
+
+/**
+ * Get learning statistics: total conversations with human replies, total messages, etc.
+ */
+export async function getAiLearningStats(): Promise<{
+  totalConversations: number;
+  totalMessages: number;
+  totalOutgoing: number;
+  totalIncoming: number;
+  recentSamples: LearnedSample[];
+}> {
+  const db = await getDb();
+  if (!db) return { totalConversations: 0, totalMessages: 0, totalOutgoing: 0, totalIncoming: 0, recentSamples: [] };
+
+  // Total message counts
+  const totalResult = await db.select({
+    total: sql<number>`COUNT(*)`,
+    outgoing: sql<number>`SUM(CASE WHEN ${messages.direction} = 'outgoing' THEN 1 ELSE 0 END)`,
+    incoming: sql<number>`SUM(CASE WHEN ${messages.direction} = 'incoming' THEN 1 ELSE 0 END)`,
+  }).from(messages);
+
+  // Count unique conversations that have both incoming and outgoing
+  const convResult = await db.select({
+    count: sql<number>`COUNT(*)`,
+  }).from(
+    db.select({
+      deviceId: messages.deviceId,
+      phoneNumber: messages.phoneNumber,
+    }).from(messages)
+      .groupBy(messages.deviceId, messages.phoneNumber)
+      .having(
+        and(
+          sql`SUM(CASE WHEN ${messages.direction} = 'incoming' THEN 1 ELSE 0 END) > 0`,
+          sql`SUM(CASE WHEN ${messages.direction} = 'outgoing' THEN 1 ELSE 0 END) > 0`,
+        )
+      ).as('conv_threads')
+  );
+
+  // Get 5 most recent samples for display
+  const recentSamples = await fetchConversationSamples(5);
+
+  return {
+    totalConversations: convResult[0]?.count ?? 0,
+    totalMessages: totalResult[0]?.total ?? 0,
+    totalOutgoing: totalResult[0]?.outgoing ?? 0,
+    totalIncoming: totalResult[0]?.incoming ?? 0,
+    recentSamples,
+  };
+}
+
+/**
+ * Update AI config learning state
+ */
+export async function updateAiLearningState(learnedCount: number, learnedSamples: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const existing = await getAiConfig();
+  if (existing) {
+    await db.update(aiConfig).set({
+      learnedCount,
+      learnedSamples,
+      lastLearnedAt: new Date(),
+    }).where(eq(aiConfig.id, existing.id));
+  }
 }

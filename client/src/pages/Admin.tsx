@@ -8,7 +8,8 @@ import {
   Loader2, Search, Save, KeyRound, ChevronDown, ChevronUp,
   BarChart3, Crown, Settings, Link2, ExternalLink, Plus,
   Building2, Hash, Copy, Eye, EyeOff, Layers, Bot, Zap,
-  CheckCircle2, XCircle, AlertTriangle,
+  CheckCircle2, XCircle, AlertTriangle, BookOpen, RefreshCw,
+  Brain, Database, TrendingUp, MessageCircle,
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
@@ -117,6 +118,7 @@ function AiConfigPanel() {
   const [showKey, setShowKey] = useState(false);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testError, setTestError] = useState("");
+  const [learningEnabled, setLearningEnabled] = useState(false);
 
   const updateMutation = trpc.ai.updateConfig.useMutation({
     onSuccess: () => { toast.success("AI配置已保存"); refetch(); },
@@ -141,6 +143,16 @@ function AiConfigPanel() {
     },
   });
 
+  const { data: learningStats, isLoading: statsLoading, refetch: refetchStats } = trpc.ai.learningStats.useQuery();
+  const refreshLearningMutation = trpc.ai.refreshLearning.useMutation({
+    onSuccess: (result) => {
+      toast.success(`学习完成，已学习 ${result.learnedCount} 组对话`);
+      refetch();
+      refetchStats();
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
   useEffect(() => {
     if (config) {
       setApiUrl(config.apiUrl || "");
@@ -149,6 +161,7 @@ function AiConfigPanel() {
       setIsEnabled(config.isEnabled || false);
       setBannedWords(config.bannedWords || "");
       setBannedReplacements(config.bannedWordReplacements || "");
+      setLearningEnabled(config.learningEnabled || false);
     }
   }, [config]);
 
@@ -300,6 +313,135 @@ function AiConfigPanel() {
         </div>
       </div>
 
+      {/* AI Learning */}
+      <div className="relative bg-card/50 border border-foreground/10 p-6">
+        <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-foreground/15" />
+        <div className="absolute top-0 right-0 w-3 h-3 border-t border-r border-foreground/15" />
+        <div className="absolute bottom-0 left-0 w-3 h-3 border-b border-l border-foreground/15" />
+        <div className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-foreground/15" />
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Brain className="w-4 h-4 text-foreground/60" />
+            <h3 className="text-sm font-serif text-foreground tracking-wider">AI 学习</h3>
+            <span className="text-[10px] px-1.5 py-0.5 bg-purple-500/20 text-purple-400/80 rounded font-body">Smart</span>
+          </div>
+          <button
+            onClick={() => setLearningEnabled(!learningEnabled)}
+            className={`relative w-11 h-6 rounded-full transition-colors ${
+              learningEnabled ? "bg-purple-500/80" : "bg-foreground/20"
+            }`}
+          >
+            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+              learningEnabled ? "left-[22px]" : "left-0.5"
+            }`} />
+          </button>
+        </div>
+        <p className="text-xs font-body text-muted-foreground/50 mb-4">
+          开启后，AI 将学习数据库中真实的人工对话记录（历史 + 实时），模仿操作人员的聊天风格和话术技巧。
+        </p>
+
+        {learningEnabled && (
+          <div className="space-y-4">
+            {/* Learning Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-background/40 border border-foreground/5 p-3 rounded">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Database className="w-3 h-3 text-purple-400/60" />
+                  <span className="text-[10px] font-body text-muted-foreground/50">总消息数</span>
+                </div>
+                <p className="text-lg font-serif text-foreground">
+                  {statsLoading ? "-" : (learningStats?.totalMessages ?? 0).toLocaleString()}
+                </p>
+              </div>
+              <div className="bg-background/40 border border-foreground/5 p-3 rounded">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <MessageCircle className="w-3 h-3 text-blue-400/60" />
+                  <span className="text-[10px] font-body text-muted-foreground/50">有效对话组</span>
+                </div>
+                <p className="text-lg font-serif text-foreground">
+                  {statsLoading ? "-" : (learningStats?.totalConversations ?? 0).toLocaleString()}
+                </p>
+              </div>
+              <div className="bg-background/40 border border-foreground/5 p-3 rounded">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <TrendingUp className="w-3 h-3 text-green-400/60" />
+                  <span className="text-[10px] font-body text-muted-foreground/50">已发送</span>
+                </div>
+                <p className="text-lg font-serif text-foreground">
+                  {statsLoading ? "-" : (learningStats?.totalOutgoing ?? 0).toLocaleString()}
+                </p>
+              </div>
+              <div className="bg-background/40 border border-foreground/5 p-3 rounded">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <BookOpen className="w-3 h-3 text-amber-400/60" />
+                  <span className="text-[10px] font-body text-muted-foreground/50">已学习样本</span>
+                </div>
+                <p className="text-lg font-serif text-foreground">
+                  {config?.learnedCount ?? 0}
+                </p>
+                {config?.lastLearnedAt && (
+                  <p className="text-[9px] font-body text-muted-foreground/30 mt-0.5">
+                    上次: {new Date(config.lastLearnedAt).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Refresh Button */}
+            <div className="flex items-center gap-3">
+              <Button
+                size="sm"
+                onClick={() => refreshLearningMutation.mutate()}
+                disabled={refreshLearningMutation.isPending}
+                className="h-8 px-4 bg-purple-500/20 border border-purple-500/30 text-purple-400/80 hover:bg-purple-500/30 text-xs font-body"
+              >
+                {refreshLearningMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                立即学习
+              </Button>
+              <span className="text-[10px] font-body text-muted-foreground/40">
+                AI 将从数据库读取最新的真实对话记录进行学习（每小时自动刷新缓存）
+              </span>
+            </div>
+
+            {/* Recent Samples Preview */}
+            {learningStats?.recentSamples && learningStats.recentSamples.length > 0 && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <MessageSquare className="w-3 h-3 text-foreground/40" />
+                  <span className="text-xs font-body text-muted-foreground/50">最近学习的对话样本</span>
+                </div>
+                <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                  {learningStats.recentSamples.slice(0, 3).map((sample: any, idx: number) => (
+                    <div key={idx} className="bg-background/30 border border-foreground/5 p-3 rounded text-xs">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-[10px] font-body text-muted-foreground/40">
+                          对话 #{idx + 1} · {sample.phoneNumber} · {sample.messages?.length || 0} 条消息
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        {(sample.messages || []).slice(-6).map((msg: any, mIdx: number) => (
+                          <div key={mIdx} className={`flex gap-2 ${
+                            msg.direction === 'outgoing' ? 'justify-end' : 'justify-start'
+                          }`}>
+                            <span className={`inline-block max-w-[80%] px-2 py-1 rounded text-[11px] font-body ${
+                              msg.direction === 'outgoing'
+                                ? 'bg-blue-500/10 text-blue-300/80'
+                                : 'bg-foreground/5 text-foreground/60'
+                            }`}>
+                              {msg.direction === 'outgoing' ? '我方' : '客户'}: {msg.body?.slice(0, 80)}{msg.body?.length > 80 ? '...' : ''}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Save Button */}
       <div className="flex justify-end">
         <Button
@@ -319,6 +461,7 @@ function AiConfigPanel() {
               isEnabled,
               bannedWords: JSON.stringify(wordsArray),
               bannedWordReplacements: JSON.stringify(replacementsObj),
+              learningEnabled,
             });
           }}
           disabled={!apiUrl || !apiKey || !modelName || updateMutation.isPending}

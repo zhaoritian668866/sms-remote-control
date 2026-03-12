@@ -83,6 +83,9 @@ import {
   getAiConversation,
   getAiConversationsByUser,
   getAiConversationsByDevice,
+  getAiLearningStats,
+  fetchConversationSamples,
+  updateAiLearningState,
 } from "./db";
 import { generateAiReply, testAiConnection } from "./aiEngine";
 import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest } from "./wsManager";
@@ -1280,11 +1283,24 @@ export const appRouter = router({
         isEnabled: z.boolean(),
         bannedWords: z.string().optional(),
         bannedWordReplacements: z.string().optional(),
+        learningEnabled: z.boolean().optional(),
       }))
       .mutation(async ({ input }) => {
         await upsertAiConfig(input);
         return { success: true };
       }),
+
+    // Superadmin: Get AI learning statistics
+    learningStats: superadminProcedure.query(async () => {
+      return getAiLearningStats();
+    }),
+
+    // Superadmin: Toggle learning and refresh samples
+    refreshLearning: superadminProcedure.mutation(async () => {
+      const samples = await fetchConversationSamples(50);
+      await updateAiLearningState(samples.length, JSON.stringify(samples));
+      return { success: true, learnedCount: samples.length };
+    }),
 
     // Superadmin: Test AI connection
     testConnection: superadminProcedure

@@ -245,6 +245,14 @@ export const aiConfig = mysqlTable("ai_config", {
   bannedWords: text("bannedWords"),
   /** Banned word replacements (JSON object: {"banned": "replacement"}) */
   bannedWordReplacements: text("bannedWordReplacements"),
+  /** Whether AI learning from real conversations is enabled */
+  learningEnabled: boolean("learningEnabled").default(false).notNull(),
+  /** Total number of conversation samples learned */
+  learnedCount: int("learnedCount").default(0).notNull(),
+  /** Timestamp of last learning run */
+  lastLearnedAt: timestamp("lastLearnedAt"),
+  /** Cached learned conversation samples (JSON array of sample objects) */
+  learnedSamples: text("learnedSamples"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
