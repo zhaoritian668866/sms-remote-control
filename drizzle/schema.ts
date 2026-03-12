@@ -111,6 +111,8 @@ export const messages = mysqlTable("messages", {
   imageUrl: varchar("imageUrl", { length: 1024 }),
   status: mysqlEnum("status", ["pending", "sent", "delivered", "failed", "received"]).default("received").notNull(),
   smsTimestamp: bigint("smsTimestamp", { mode: "number" }).notNull(),
+  /** Whether this message has been analyzed by AI learning */
+  isLearned: boolean("isLearned").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -253,6 +255,14 @@ export const aiConfig = mysqlTable("ai_config", {
   lastLearnedAt: timestamp("lastLearnedAt"),
   /** Cached learned conversation samples (JSON array of sample objects) */
   learnedSamples: text("learnedSamples"),
+  /** AI-generated learning summary: analyzed conversation patterns, strategies, and style */
+  learningSummary: text("learningSummary"),
+  /** Timestamp of last learning summary generation */
+  lastSummaryAt: timestamp("lastSummaryAt"),
+  /** Minimum reply delay in seconds (simulate typing) */
+  replyDelayMin: int("replyDelayMin").default(5).notNull(),
+  /** Maximum reply delay in seconds (simulate typing) */
+  replyDelayMax: int("replyDelayMax").default(30).notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 

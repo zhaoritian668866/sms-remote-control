@@ -10,9 +10,9 @@ import {
   Building2, Hash, Copy, Eye, EyeOff, Layers, Bot, Zap,
   CheckCircle2, XCircle, AlertTriangle, BookOpen, RefreshCw,
   Brain, Database, TrendingUp, MessageCircle, Trash2, History,
-  Send, Sparkles, Clock,
+  Send, Sparkles, Clock, Timer, FileText, GraduationCap, Play,
 } from "lucide-react";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { getLoginUrl } from "@/const";
@@ -148,13 +148,58 @@ function AiConfigPanel() {
   const [simMessage, setSimMessage] = useState("");
   const [simHistory, setSimHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const [showSimulator, setShowSimulator] = useState(false);
-  const { data: learningStats, isLoading: statsLoading } = trpc.ai.learningStats.useQuery(undefined, {
-    refetchInterval: learningEnabled ? 15000 : false, // Refresh stats every 15s when learning enabled
+  const [showSummary, setShowSummary] = useState(false);
+  const [delayMin, setDelayMin] = useState(5);
+  const [delayMax, setDelayMax] = useState(30);
+
+  const { data: learningStats, isLoading: statsLoading, refetch: refetchStats } = trpc.ai.learningStats.useQuery(undefined, {
+    refetchInterval: learningEnabled ? 15000 : false,
   });
   const { data: previewSamples } = trpc.ai.previewSamples.useQuery(
     { limit: 5 },
     { enabled: learningEnabled, refetchInterval: learningEnabled ? 30000 : false }
   );
+  const { data: summaryData, refetch: refetchSummary } = trpc.ai.getSummary.useQuery(undefined, {
+    enabled: learningEnabled,
+  });
+
+  // Sync delay settings from server
+  useEffect(() => {
+    if (summaryData) {
+      setDelayMin(summaryData.replyDelayMin);
+      setDelayMax(summaryData.replyDelayMax);
+    }
+  }, [summaryData]);
+
+  const learnAndMarkMutation = trpc.ai.learnAndMark.useMutation({
+    onSuccess: (result) => {
+      if (result.success) {
+        toast.success(result.message || `学习了${result.learnedCount}组对话`);
+        refetchStats();
+        refetchSummary();
+      } else {
+        toast.error(result.error || "学习失败");
+      }
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const generateSummaryMutation = trpc.ai.generateSummary.useMutation({
+    onSuccess: (result) => {
+      if (result.success) {
+        toast.success("学习总结已更新");
+        refetchSummary();
+      } else {
+        toast.error(result.error || "生成总结失败");
+      }
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const updateDelayMutation = trpc.ai.updateDelaySettings.useMutation({
+    onSuccess: () => toast.success("延迟设置已保存"),
+    onError: (err: any) => toast.error(err.message),
+  });
 
   const simulateMutation = trpc.ai.simulate.useMutation({
     onSuccess: (result) => {
@@ -360,12 +405,12 @@ function AiConfigPanel() {
             <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded">
               <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
               <span className="text-[11px] font-body text-green-400/80">
-                实时学习已开启 · AI回复时自动从messages表读取中国号码对话作为参考
+                AI学习已开启 · 每小时自动分析新对话并生成策略总结 · 回复时智能判断是否应答 · 模拟真人打字速度
               </span>
             </div>
 
-            {/* Learning Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* Learning Stats - 6 cards */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               <div className="bg-background/40 border border-foreground/5 p-3 rounded">
                 <div className="flex items-center gap-1.5 mb-1">
                   <Database className="w-3 h-3 text-purple-400/60" />
@@ -402,10 +447,58 @@ function AiConfigPanel() {
                   {statsLoading ? "-" : (learningStats?.totalIncoming ?? 0).toLocaleString()}
                 </p>
               </div>
+              <div className="bg-background/40 border border-green-500/20 p-3 rounded">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <CheckCircle2 className="w-3 h-3 text-green-400/60" />
+                  <span className="text-[10px] font-body text-green-400/60">已学习</span>
+                </div>
+                <p className="text-lg font-serif text-green-400">
+                  {statsLoading ? "-" : (learningStats?.learnedMessages ?? 0).toLocaleString()}
+                </p>
+              </div>
+              <div className="bg-background/40 border border-orange-500/20 p-3 rounded">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Clock className="w-3 h-3 text-orange-400/60" />
+                  <span className="text-[10px] font-body text-orange-400/60">未学习</span>
+                </div>
+                <p className="text-lg font-serif text-orange-400">
+                  {statsLoading ? "-" : (learningStats?.unlearnedMessages ?? 0).toLocaleString()}
+                </p>
+              </div>
             </div>
 
-            {/* Action Button - only simulator */}
+            {/* Action Buttons */}
             <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => learnAndMarkMutation.mutate({})}
+                disabled={learnAndMarkMutation.isPending}
+                className="h-8 px-4 border text-xs font-body bg-green-500/20 border-green-500/30 text-green-400/80 hover:bg-green-500/30"
+              >
+                {learnAndMarkMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <GraduationCap className="w-3 h-3 mr-1" />}
+                学习并标记
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => generateSummaryMutation.mutate()}
+                disabled={generateSummaryMutation.isPending}
+                className="h-8 px-4 border text-xs font-body bg-blue-500/20 border-blue-500/30 text-blue-400/80 hover:bg-blue-500/30"
+              >
+                {generateSummaryMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <FileText className="w-3 h-3 mr-1" />}
+                生成总结
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setShowSummary(!showSummary)}
+                className={`h-8 px-4 border text-xs font-body ${
+                  showSummary
+                    ? "bg-purple-500/30 border-purple-500/40 text-purple-400/90"
+                    : "bg-purple-500/20 border-purple-500/30 text-purple-400/80 hover:bg-purple-500/30"
+                }`}
+              >
+                <Brain className="w-3 h-3 mr-1" />
+                学习总结
+              </Button>
               <Button
                 size="sm"
                 onClick={() => setShowSimulator(!showSimulator)}
@@ -418,6 +511,84 @@ function AiConfigPanel() {
                 <Sparkles className="w-3 h-3 mr-1" />
                 对话模拟
               </Button>
+            </div>
+
+            {/* Learning Summary Window */}
+            {showSummary && (
+              <div className="bg-background/30 border border-purple-500/20 rounded p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Brain className="w-3.5 h-3.5 text-purple-400/70" />
+                    <span className="text-xs font-serif text-foreground/80">学习总结报告</span>
+                    {summaryData?.lastSummaryAt && (
+                      <span className="text-[10px] font-body text-muted-foreground/40">
+                        上次更新: {new Date(summaryData.lastSummaryAt).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => refetchSummary()}
+                    className="text-[10px] font-body text-muted-foreground/40 hover:text-foreground/60"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                  </button>
+                </div>
+                {summaryData?.summary ? (
+                  <div className="bg-background/40 border border-foreground/5 rounded p-3">
+                    <pre className="text-xs font-body text-foreground/70 whitespace-pre-wrap leading-relaxed">{summaryData.summary}</pre>
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-xs font-body text-muted-foreground/40">还没有学习总结，点击“生成总结”或等待自动学习（每小时一次）</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Reply Delay Settings */}
+            <div className="bg-background/30 border border-foreground/5 rounded p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Timer className="w-3.5 h-3.5 text-foreground/50" />
+                <span className="text-xs font-serif text-foreground/80">回复延迟设置</span>
+                <span className="text-[10px] font-body text-muted-foreground/40">模拟真人打字速度，避免秒回</span>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-body text-muted-foreground/50">最小延迟</span>
+                  <Input
+                    type="number"
+                    value={delayMin}
+                    onChange={(e) => setDelayMin(Number(e.target.value))}
+                    className="w-16 h-7 text-xs bg-background/40 border-foreground/10 text-center"
+                    min={1}
+                    max={120}
+                  />
+                  <span className="text-[10px] font-body text-muted-foreground/40">秒</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-body text-muted-foreground/50">最大延迟</span>
+                  <Input
+                    type="number"
+                    value={delayMax}
+                    onChange={(e) => setDelayMax(Number(e.target.value))}
+                    className="w-16 h-7 text-xs bg-background/40 border-foreground/10 text-center"
+                    min={1}
+                    max={300}
+                  />
+                  <span className="text-[10px] font-body text-muted-foreground/40">秒</span>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => updateDelayMutation.mutate({ replyDelayMin: delayMin, replyDelayMax: delayMax })}
+                  disabled={updateDelayMutation.isPending}
+                  className="h-7 px-3 text-[10px] font-body bg-foreground/10 border border-foreground/15 text-foreground/60 hover:bg-foreground/20"
+                >
+                  {updateDelayMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "保存"}
+                </Button>
+              </div>
+              <p className="text-[10px] font-body text-muted-foreground/30 mt-2">
+                AI回复时会根据回复字数计算延迟（每字约0.3-0.5秒），在最小和最大延迟之间随机波动，模拟真人打字节奏
+              </p>
             </div>
 
             {/* Conversation Simulator */}

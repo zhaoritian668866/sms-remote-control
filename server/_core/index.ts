@@ -145,6 +145,8 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    // Start the AI learning scheduler
+    import("../learningScheduler").then(m => m.startLearningScheduler()).catch(console.error);
   });
 }
 

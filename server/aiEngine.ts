@@ -8,10 +8,113 @@
  * - Round 7-8: Deepen connection, share "personal" stories
  * - Round 9-10: Guide customer to target APP
  * 
- * Uses OpenAI-compatible API (works with DeepSeek, Qwen, etc.)
+ * Features:
+ * - Smart reply judgment: knows when to reply and when to stay silent
+ * - Typing delay: simulates real human typing speed
+ * - Learning summary: uses AI-analyzed conversation patterns instead of raw examples
+ * - Banned words filter
  */
 
 import { getAiConfig, getAiUserSettings, getAiConversation, upsertAiConversation, fetchRecentChineseSamples, type ConversationSample } from "./db";
+
+// ─── Smart Reply Judgment ───
+
+/**
+ * Determines if the AI should reply to this message.
+ * Returns { shouldReply, reason, delayMultiplier }
+ */
+export function shouldReplyToMessage(message: string): { shouldReply: boolean; reason: string; delayMultiplier: number } {
+  const trimmed = message.trim();
+  
+  // Don't reply to empty messages
+  if (!trimmed) {
+    return { shouldReply: false, reason: "空消息", delayMultiplier: 1 };
+  }
+
+  // Strong rejection signals - DO NOT reply
+  const strongRejections = [
+    /不要.*联系/i, /别.*联系/i, /拉黑/i, /骚扰/i, /报警/i, /举报/i,
+    /滚/i, /去死/i, /变态/i, /流氓/i, /不认识你/i, /打扰/i,
+    /别发了/i, /不要发/i, /停止/i, /取消/i, /退订/i,
+    /我要投诉/i, /法律/i, /律师/i, /警察/i,
+    /不想.*聊/i, /别.*聊/i, /不要.*聊/i,
+    /删.*号码/i, /删.*联系/i,
+  ];
+  for (const pattern of strongRejections) {
+    if (pattern.test(trimmed)) {
+      return { shouldReply: false, reason: "客户明确拒绝", delayMultiplier: 1 };
+    }
+  }
+
+  // Mild rejection - reply cautiously with longer delay
+  const mildRejections = [
+    /没兴趣/i, /不需要/i, /不用了/i, /算了/i,
+    /再说吧/i, /以后再说/i, /忙/i, /没空/i,
+    /不方便/i, /改天/i,
+  ];
+  for (const pattern of mildRejections) {
+    if (pattern.test(trimmed)) {
+      return { shouldReply: true, reason: "客户婉拒，谨慎回复", delayMultiplier: 2.5 };
+    }
+  }
+
+  // Very short messages (1-2 chars like "嗯", "哦", "好") - reply with longer delay
+  if (trimmed.length <= 2) {
+    return { shouldReply: true, reason: "简短回复，延迟回复", delayMultiplier: 2 };
+  }
+
+  // Question from customer - reply quickly
+  if (/[？?]/.test(trimmed) || /谁|什么|怎么|哪|为什么|多少|几/.test(trimmed)) {
+    return { shouldReply: true, reason: "客户提问，积极回复", delayMultiplier: 0.8 };
+  }
+
+  // Positive engagement signals - reply normally
+  const positiveSignals = [
+    /你好/i, /嗨/i, /在吗/i, /聊聊/i, /认识/i,
+    /喜欢/i, /有意思/i, /好的/i, /可以/i, /行/i,
+    /哈哈/i, /呵呵/i, /嘿嘿/i,
+  ];
+  for (const pattern of positiveSignals) {
+    if (pattern.test(trimmed)) {
+      return { shouldReply: true, reason: "客户积极互动", delayMultiplier: 1 };
+    }
+  }
+
+  // Default: reply with normal delay
+  return { shouldReply: true, reason: "正常对话", delayMultiplier: 1 };
+}
+
+// ─── Typing Delay Calculator ───
+
+/**
+ * Calculate a realistic typing delay based on reply length.
+ * Simulates real human typing speed with randomness.
+ */
+export function calculateTypingDelay(
+  replyText: string,
+  minDelay: number = 5,
+  maxDelay: number = 30,
+  delayMultiplier: number = 1,
+): number {
+  const charCount = replyText.length;
+  
+  // Base: ~0.3-0.5 seconds per character (Chinese typing speed)
+  const baseDelay = charCount * (0.3 + Math.random() * 0.2);
+  
+  // Add "thinking time" (2-5 seconds)
+  const thinkingTime = 2 + Math.random() * 3;
+  
+  // Total delay with multiplier
+  let totalDelay = (baseDelay + thinkingTime) * delayMultiplier;
+  
+  // Clamp to min/max range
+  totalDelay = Math.max(minDelay, Math.min(maxDelay, totalDelay));
+  
+  // Add small random jitter (±20%)
+  const jitter = totalDelay * (0.8 + Math.random() * 0.4);
+  
+  return Math.round(jitter);
+}
 
 // ─── SMS Banned Words Filter ───
 
@@ -59,6 +162,7 @@ function buildSystemPrompt(settings: {
   customerJob?: string | null;
   customerIncome?: string | null;
   customerMaritalStatus?: string | null;
+  learningSummary?: string | null;
   learnedExamples?: string;
 }): string {
   const { personaName, targetApp, targetAppId, currentRound, customerAge, customerJob, customerIncome, customerMaritalStatus } = settings;
@@ -66,9 +170,9 @@ function buildSystemPrompt(settings: {
   // Calculate persona age (5-7 years older than customer, or random 28-35 if unknown)
   let personaAge: number;
   if (customerAge) {
-    personaAge = customerAge + 5 + Math.floor(Math.random() * 3); // +5 to +7
+    personaAge = customerAge + 5 + Math.floor(Math.random() * 3);
   } else {
-    personaAge = 28 + Math.floor(Math.random() * 8); // 28-35
+    personaAge = 28 + Math.floor(Math.random() * 8);
   }
 
   const knownInfo: string[] = [];
@@ -112,8 +216,17 @@ function buildSystemPrompt(settings: {
 - 如果对方犹豫，不要强求，温柔地再劝一次`;
   }
 
+  // Build learning context: prefer summary over raw examples
+  let learningContext = '';
+  if (settings.learningSummary) {
+    learningContext = `\n【AI学习总结 - 已内化的对话风格和策略】\n${settings.learningSummary}\n`;
+  }
+  if (settings.learnedExamples) {
+    learningContext += settings.learnedExamples;
+  }
+
   return `你是一个名叫"${personaName}"的${personaAge}岁女性，正在通过短信和一个潜在的相亲对象聊天。
-${settings.learnedExamples || ''}
+${learningContext}
 
 【你的人设】
 - 名字：${personaName}
@@ -174,14 +287,12 @@ async function callLLM(apiUrl: string, apiKey: string, modelName: string, messag
     baseUrl += '/chat/completions';
   }
 
-  // Build request body - try max_completion_tokens first (GPT-5.x+), fallback to max_tokens
   const requestBody: Record<string, any> = {
     model: modelName,
     messages,
     temperature: 0.8,
   };
 
-  // Use max_completion_tokens for newer models (o1, o3, gpt-5.x+), max_tokens for others
   const useNewParam = /^(o[0-9]|gpt-5|gpt-4o)/.test(modelName.toLowerCase());
   if (useNewParam) {
     requestBody.max_completion_tokens = 200;
@@ -198,11 +309,9 @@ async function callLLM(apiUrl: string, apiKey: string, modelName: string, messag
     body: JSON.stringify(requestBody),
   });
 
-  // If max_completion_tokens fails with unsupported_parameter, retry with max_tokens (and vice versa)
   if (!response.ok) {
     const errorText = await response.text();
     if (errorText.includes('max_tokens') && errorText.includes('max_completion_tokens')) {
-      // Swap the parameter and retry
       const retryBody: Record<string, any> = { model: modelName, messages, temperature: 0.8 };
       if (useNewParam) {
         retryBody.max_tokens = 200;
@@ -239,6 +348,9 @@ export interface AiReplyResult {
   round?: number;
   isComplete?: boolean;
   extractedInfo?: ExtractedInfo;
+  shouldReply?: boolean;
+  replyDelay?: number;
+  replyJudgment?: string;
 }
 
 export async function generateAiReply(
@@ -254,13 +366,24 @@ export async function generateAiReply(
       return { success: false, error: "AI auto-reply is not enabled globally" };
     }
 
-    // 2. Check user AI settings
+    // 2. Smart reply judgment - decide if we should reply at all
+    const judgment = shouldReplyToMessage(incomingMessage);
+    if (!judgment.shouldReply) {
+      return { 
+        success: true, 
+        shouldReply: false, 
+        replyJudgment: judgment.reason,
+        error: `不回复: ${judgment.reason}` 
+      };
+    }
+
+    // 3. Check user AI settings
     const userSettings = await getAiUserSettings(userId);
     if (!userSettings || !userSettings.isEnabled) {
       return { success: false, error: "AI auto-reply is not enabled for this user" };
     }
 
-    // 3. Get or create conversation state
+    // 4. Get or create conversation state
     let conversation = await getAiConversation(deviceId, phoneNumber);
     if (!conversation) {
       await upsertAiConversation({
@@ -278,12 +401,12 @@ export async function generateAiReply(
       return { success: false, error: "Failed to create conversation" };
     }
 
-    // 4. Check if conversation is still active (max 10 rounds)
+    // 5. Check if conversation is still active (max 10 rounds)
     if (!conversation.isActive || conversation.currentRound >= 10) {
       return { success: false, error: "Conversation has reached maximum rounds", isComplete: true };
     }
 
-    // 5. Parse conversation history
+    // 6. Parse conversation history
     let history: Array<{role: string; content: string}> = [];
     try {
       if (conversation.conversationHistory) {
@@ -296,13 +419,12 @@ export async function generateAiReply(
 
     const newRound = conversation.currentRound + 1;
 
-    // 6. Build learned examples from real conversations (direct from DB, always fresh)
+    // 7. Build learning context
     let learnedExamples = '';
     if (config.learningEnabled) {
       try {
         const samples = await fetchRecentChineseSamples(5);
         if (samples.length > 0) {
-          // Pick 3 random samples
           const shuffled = samples.sort(() => Math.random() - 0.5).slice(0, 3);
           const exampleTexts = shuffled.map((s, i) => {
             const msgs = s.messages.slice(-8).map(m => 
@@ -313,11 +435,11 @@ export async function generateAiReply(
           learnedExamples = `\n【真实对话参考】\n以下是我方操作人员的真实聊天记录，请学习其中的聊天风格、语气和话术技巧，并融入你的回复中：\n\n${exampleTexts}\n`;
         }
       } catch (e) {
-        console.error('[AI Engine] Failed to load learned samples:', e);
+        console.error("[AI Engine] Failed to fetch learning samples:", e);
       }
     }
 
-    // 7. Build system prompt with current strategy
+    // 8. Build system prompt with learning summary + examples
     const systemPrompt = buildSystemPrompt({
       personaName: userSettings.personaName,
       targetApp: userSettings.targetApp,
@@ -327,27 +449,36 @@ export async function generateAiReply(
       customerJob: conversation.customerJob,
       customerIncome: conversation.customerIncome,
       customerMaritalStatus: conversation.customerMaritalStatus,
+      learningSummary: config.learningSummary,
       learnedExamples,
     });
 
-    // 7. Call LLM
+    // 9. Call LLM
     const llmMessages = [
       { role: 'system', content: systemPrompt },
-      ...history.slice(-10), // Keep last 10 messages for context
+      ...history.slice(-10),
     ];
 
     let reply = await callLLM(config.apiUrl, config.apiKey, config.modelName, llmMessages);
 
-    // 8. Filter banned words
+    // 10. Filter banned words
     const bannedConfig = parseBannedWords(config);
     if (bannedConfig.bannedWords.length > 0 || Object.keys(bannedConfig.replacements).length > 0) {
       reply = filterBannedWords(reply, bannedConfig);
     }
 
-    // 9. Add reply to history
+    // 11. Calculate typing delay
+    const replyDelay = calculateTypingDelay(
+      reply,
+      config.replyDelayMin ?? 5,
+      config.replyDelayMax ?? 30,
+      judgment.delayMultiplier,
+    );
+
+    // 12. Add reply to history
     history.push({ role: 'assistant', content: reply });
 
-    // 10. Try to extract customer info every few rounds
+    // 13. Try to extract customer info every few rounds
     let extractedInfo: ExtractedInfo = {};
     if (newRound >= 3 && newRound % 2 === 0) {
       try {
@@ -367,7 +498,7 @@ export async function generateAiReply(
       }
     }
 
-    // 11. Update conversation state
+    // 14. Update conversation state
     const isComplete = newRound >= 10;
     await upsertAiConversation({
       deviceId,
@@ -389,6 +520,9 @@ export async function generateAiReply(
       round: newRound,
       isComplete,
       extractedInfo,
+      shouldReply: true,
+      replyDelay,
+      replyJudgment: judgment.reason,
     };
   } catch (error: any) {
     console.error("[AI Engine] Error generating reply:", error);
@@ -417,11 +551,18 @@ export async function simulateConversation(
   modelName: string,
   userMessage: string,
   history: Array<{ role: string; content: string }>,
+  learningSummary: string | null | undefined,
   samplesJson: string | null | undefined,
   bannedWordsStr: string | null | undefined,
   bannedReplacementsStr: string | null | undefined,
-): Promise<{ success: boolean; reply?: string; error?: string }> {
+): Promise<{ success: boolean; reply?: string; error?: string; shouldReply?: boolean; replyDelay?: number; replyJudgment?: string }> {
   try {
+    // Smart reply judgment
+    const judgment = shouldReplyToMessage(userMessage);
+    if (!judgment.shouldReply) {
+      return { success: true, shouldReply: false, replyJudgment: judgment.reason };
+    }
+
     // Build learned examples if available
     let learnedExamples = '';
     if (samplesJson) {
@@ -440,8 +581,17 @@ export async function simulateConversation(
       } catch {}
     }
 
+    // Build learning context
+    let learningContext = '';
+    if (learningSummary) {
+      learningContext = `\n【AI学习总结 - 已内化的对话风格和策略】\n${learningSummary}\n`;
+    }
+    if (learnedExamples) {
+      learningContext += learnedExamples;
+    }
+
     const systemPrompt = `你是一个名叫"小美"的28岁女性，正在通过短信和一个潜在的相亲对象聊天。
-${learnedExamples}
+${learningContext}
 
 【你的人设】
 - 名字：小美
@@ -480,8 +630,62 @@ ${learnedExamples}
       }
     }
 
-    return { success: true, reply };
+    // Calculate typing delay
+    const replyDelay = calculateTypingDelay(reply, 5, 30, judgment.delayMultiplier);
+
+    return { success: true, reply, shouldReply: true, replyDelay, replyJudgment: judgment.reason };
   } catch (error: any) {
     return { success: false, error: error.message || "模拟对话失败" };
   }
+}
+
+// ─── Generate Learning Summary ───
+
+/**
+ * Analyze conversation samples and generate a learning summary.
+ * This is called periodically (every hour) to update the AI's understanding.
+ */
+export async function generateLearningSummaryFromSamples(
+  apiUrl: string,
+  apiKey: string,
+  modelName: string,
+  samples: ConversationSample[],
+  existingSummary?: string | null,
+): Promise<string> {
+  if (samples.length === 0) {
+    return existingSummary || '';
+  }
+
+  const sampleTexts = samples.map((s, i) => {
+    const msgs = s.messages.map(m =>
+      `${m.direction === 'outgoing' ? '我方' : '客户'}: ${m.body}`
+    ).join('\n');
+    return `对话${i + 1} (号码: ${s.phoneNumber}):\n${msgs}`;
+  }).join('\n\n---\n\n');
+
+  const prompt = `你是一个对话分析专家。请分析以下真实的相亲短信对话记录，总结出操作人员的聊天风格和策略。
+
+${existingSummary ? `【之前的学习总结】\n${existingSummary}\n\n请在此基础上补充和完善。\n` : ''}
+
+【新的对话记录】
+${sampleTexts}
+
+请从以下维度进行深度分析和总结：
+
+1. **开场策略**：操作人员通常如何开场？用什么理由联系对方？
+2. **语言风格**：用词习惯、句式特点、语气词使用、句子长度
+3. **话术技巧**：如何应对客户的质疑？如何化解尴尬？如何引导话题？
+4. **应对拒绝**：当客户表示不感兴趣或拒绝时，如何回应？
+5. **信息获取**：如何自然地获取客户的年龄、职业、婚姻状况等信息？
+6. **情感升温**：如何逐步建立信任和好感？
+7. **引导转化**：如何引导客户添加其他社交平台？
+8. **禁忌事项**：哪些话题或说法应该避免？
+
+请用简洁的要点形式总结，每个维度2-4条核心要点。这个总结将直接注入AI的系统提示词中，指导AI模仿这种聊天风格。`;
+
+  const summary = await callLLM(apiUrl, apiKey, modelName, [
+    { role: 'user', content: prompt },
+  ]);
+
+  return summary;
 }

@@ -1312,7 +1312,7 @@ export async function getAiConfig(): Promise<AiConfig | undefined> {
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function upsertAiConfig(data: { apiUrl: string; apiKey: string; modelName: string; isEnabled: boolean; bannedWords?: string; bannedWordReplacements?: string; learningEnabled?: boolean }): Promise<void> {
+export async function upsertAiConfig(data: { apiUrl: string; apiKey: string; modelName: string; isEnabled: boolean; bannedWords?: string; bannedWordReplacements?: string; learningEnabled?: boolean; replyDelayMin?: number; replyDelayMax?: number }): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const existing = await getAiConfig();
@@ -1325,6 +1325,8 @@ export async function upsertAiConfig(data: { apiUrl: string; apiKey: string; mod
       bannedWords: data.bannedWords ?? null,
       bannedWordReplacements: data.bannedWordReplacements ?? null,
       learningEnabled: data.learningEnabled ?? existing.learningEnabled,
+      replyDelayMin: data.replyDelayMin ?? existing.replyDelayMin,
+      replyDelayMax: data.replyDelayMax ?? existing.replyDelayMax,
     }).where(eq(aiConfig.id, existing.id));
   } else {
     await db.insert(aiConfig).values({
@@ -1513,7 +1515,7 @@ export async function fetchRecentChineseSamples(limit: number = 5): Promise<Conv
 }
 
 /**
- * Get AI learning statistics: total conversations with human replies, total messages, etc.
+ * Get AI learning statistics with learned/unlearned counts.
  * Only counts Chinese phone numbers. Lightweight queries with indexes.
  */
 export async function getAiLearningStats(): Promise<{
@@ -1521,10 +1523,12 @@ export async function getAiLearningStats(): Promise<{
   totalMessages: number;
   totalOutgoing: number;
   totalIncoming: number;
+  learnedMessages: number;
+  unlearnedMessages: number;
   recentSamples: ConversationSample[];
 }> {
   const db = await getDb();
-  if (!db) return { totalConversations: 0, totalMessages: 0, totalOutgoing: 0, totalIncoming: 0, recentSamples: [] };
+  if (!db) return { totalConversations: 0, totalMessages: 0, totalOutgoing: 0, totalIncoming: 0, learnedMessages: 0, unlearnedMessages: 0, recentSamples: [] };
 
   // Chinese number SQL filter
   const cnFilter = sql`(
@@ -1534,11 +1538,13 @@ export async function getAiLearningStats(): Promise<{
     OR (LENGTH(${messages.phoneNumber}) = 11 AND ${messages.phoneNumber} LIKE '1%')
   )`;
 
-  // Total message counts (Chinese numbers only)
+  // Total message counts with learned/unlearned breakdown
   const totalResult = await db.select({
     total: sql<number>`COUNT(*)`,
     outgoing: sql<number>`SUM(CASE WHEN ${messages.direction} = 'outgoing' THEN 1 ELSE 0 END)`,
     incoming: sql<number>`SUM(CASE WHEN ${messages.direction} = 'incoming' THEN 1 ELSE 0 END)`,
+    learned: sql<number>`SUM(CASE WHEN ${messages.isLearned} = true THEN 1 ELSE 0 END)`,
+    unlearned: sql<number>`SUM(CASE WHEN ${messages.isLearned} = false THEN 1 ELSE 0 END)`,
   }).from(messages).where(cnFilter);
 
   // Count unique conversations that have both incoming and outgoing
@@ -1567,8 +1573,104 @@ export async function getAiLearningStats(): Promise<{
     totalMessages: totalResult[0]?.total ?? 0,
     totalOutgoing: totalResult[0]?.outgoing ?? 0,
     totalIncoming: totalResult[0]?.incoming ?? 0,
+    learnedMessages: totalResult[0]?.learned ?? 0,
+    unlearnedMessages: totalResult[0]?.unlearned ?? 0,
     recentSamples,
   };
+}
+
+/**
+ * Mark messages as learned by their phone numbers.
+ * Called after AI has analyzed and summarized conversation patterns.
+ */
+export async function markMessagesAsLearned(phoneNumbers: string[]): Promise<number> {
+  const db = await getDb();
+  if (!db || phoneNumbers.length === 0) return 0;
+  
+  const result = await db.update(messages)
+    .set({ isLearned: true })
+    .where(
+      and(
+        inArray(messages.phoneNumber, phoneNumbers),
+        eq(messages.isLearned, false),
+      )
+    );
+  return (result as any)[0]?.affectedRows ?? 0;
+}
+
+/**
+ * Fetch unlearned Chinese conversation samples for AI analysis.
+ * Only gets conversations not yet marked as learned.
+ */
+export async function fetchUnlearnedChineseSamples(limit: number = 20): Promise<ConversationSample[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const cnFilter = sql`(
+    ${messages.phoneNumber} LIKE '+86%'
+    OR (${messages.phoneNumber} LIKE '86%' AND LENGTH(${messages.phoneNumber}) >= 13)
+    OR (${messages.phoneNumber} REGEXP '^1[3-9][0-9]{9}$')
+    OR (LENGTH(${messages.phoneNumber}) = 11 AND ${messages.phoneNumber} LIKE '1%')
+  )`;
+
+  // Find phone numbers with unlearned messages that have both incoming and outgoing
+  const threads = await db.select({
+    phoneNumber: messages.phoneNumber,
+  }).from(messages)
+    .where(and(cnFilter, eq(messages.isLearned, false)))
+    .groupBy(messages.phoneNumber)
+    .having(
+      and(
+        sql`SUM(CASE WHEN ${messages.direction} = 'incoming' THEN 1 ELSE 0 END) > 0`,
+        sql`SUM(CASE WHEN ${messages.direction} = 'outgoing' THEN 1 ELSE 0 END) > 0`,
+      )
+    )
+    .orderBy(sql`MAX(${messages.smsTimestamp}) DESC`)
+    .limit(limit);
+
+  if (threads.length === 0) return [];
+
+  const samples: ConversationSample[] = [];
+  for (const thread of threads) {
+    const threadMsgs = await db.select({
+      direction: messages.direction,
+      body: messages.body,
+      smsTimestamp: messages.smsTimestamp,
+    }).from(messages)
+      .where(eq(messages.phoneNumber, thread.phoneNumber))
+      .orderBy(desc(messages.smsTimestamp))
+      .limit(10);
+
+    if (threadMsgs.length >= 2) {
+      samples.push({
+        phoneNumber: thread.phoneNumber,
+        messages: threadMsgs.reverse().map(m => ({
+          direction: m.direction,
+          body: m.body,
+        })),
+      });
+    }
+  }
+
+  return samples;
+}
+
+/**
+ * Update the AI learning summary in ai_config.
+ */
+export async function updateLearningSummary(summary: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  
+  const existing = await db.select().from(aiConfig).limit(1);
+  if (existing.length > 0) {
+    await db.update(aiConfig)
+      .set({ 
+        learningSummary: summary, 
+        lastSummaryAt: new Date(),
+      })
+      .where(eq(aiConfig.id, existing[0].id));
+  }
 }
 
 

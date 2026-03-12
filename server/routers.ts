@@ -85,8 +85,11 @@ import {
   getAiConversationsByDevice,
   getAiLearningStats,
   fetchRecentChineseSamples,
+  markMessagesAsLearned,
+  fetchUnlearnedChineseSamples,
+  updateLearningSummary,
 } from "./db";
-import { generateAiReply, testAiConnection, simulateConversation } from "./aiEngine";
+import { generateAiReply, testAiConnection, simulateConversation, generateLearningSummaryFromSamples, shouldReplyToMessage, calculateTypingDelay } from "./aiEngine";
 import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest } from "./wsManager";
 import { saveFileLocally } from "./_core/index";
 import { storagePut } from "./storage";
@@ -1304,6 +1307,71 @@ export const appRouter = router({
         return fetchRecentChineseSamples(input?.limit ?? 5);
       }),
 
+    // Superadmin: Learn unlearned conversations and mark them
+    learnAndMark: superadminProcedure
+      .input(z.object({ limit: z.number().min(1).max(100).optional() }).optional().default({}))
+      .mutation(async ({ input }) => {
+        const config = await getAiConfig();
+        if (!config || !config.apiUrl || !config.apiKey || !config.modelName) {
+          return { success: false, error: "请先配置AI接口", learnedCount: 0, markedCount: 0 };
+        }
+        // Fetch unlearned samples
+        const samples = await fetchUnlearnedChineseSamples(input?.limit ?? 20);
+        if (samples.length === 0) {
+          return { success: true, learnedCount: 0, markedCount: 0, message: "没有新的未学习对话" };
+        }
+        // Generate/update learning summary using AI
+        const newSummary = await generateLearningSummaryFromSamples(
+          config.apiUrl, config.apiKey, config.modelName,
+          samples, config.learningSummary,
+        );
+        await updateLearningSummary(newSummary);
+        // Mark these conversations as learned
+        const phoneNumbers = samples.map(s => s.phoneNumber);
+        const markedCount = await markMessagesAsLearned(phoneNumbers);
+        return { success: true, learnedCount: samples.length, markedCount, message: `学习了${samples.length}组对话，标记了${markedCount}条消息` };
+      }),
+
+    // Superadmin: Generate learning summary on demand
+    generateSummary: superadminProcedure.mutation(async () => {
+      const config = await getAiConfig();
+      if (!config || !config.apiUrl || !config.apiKey || !config.modelName) {
+        return { success: false, error: "请先配置AI接口" };
+      }
+      const samples = await fetchRecentChineseSamples(10);
+      if (samples.length === 0) {
+        return { success: false, error: "没有可用的对话数据" };
+      }
+      const summary = await generateLearningSummaryFromSamples(
+        config.apiUrl, config.apiKey, config.modelName,
+        samples, config.learningSummary,
+      );
+      await updateLearningSummary(summary);
+      return { success: true, summary };
+    }),
+
+    // Superadmin: Get current learning summary
+    getSummary: superadminProcedure.query(async () => {
+      const config = await getAiConfig();
+      return {
+        summary: config?.learningSummary || null,
+        lastSummaryAt: config?.lastSummaryAt?.getTime() || null,
+        replyDelayMin: config?.replyDelayMin ?? 5,
+        replyDelayMax: config?.replyDelayMax ?? 30,
+      };
+    }),
+
+    // Superadmin: Update reply delay settings
+    updateDelaySettings: superadminProcedure
+      .input(z.object({
+        replyDelayMin: z.number().min(1).max(120),
+        replyDelayMax: z.number().min(1).max(300),
+      }))
+      .mutation(async ({ input }) => {
+        await upsertAiConfig(input as any);
+        return { success: true };
+      }),
+
     // Superadmin: Simulate conversation (test AI reply quality)
     simulate: superadminProcedure
       .input(z.object({
@@ -1329,6 +1397,7 @@ export const appRouter = router({
         const result = await simulateConversation(
           config.apiUrl, config.apiKey, config.modelName,
           input.message, input.history || [],
+          config.learningSummary,
           samplesJson,
           config.bannedWords, config.bannedWordReplacements,
         );

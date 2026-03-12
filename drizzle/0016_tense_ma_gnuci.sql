@@ -1,0 +1,1 @@
+ALTER TABLE `messages` ADD `isLearned` boolean DEFAULT false NOT NULL;
