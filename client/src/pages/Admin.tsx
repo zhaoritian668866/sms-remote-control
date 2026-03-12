@@ -148,7 +148,7 @@ function AiConfigPanel() {
   const [simMessage, setSimMessage] = useState("");
   const [simHistory, setSimHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const [showSimulator, setShowSimulator] = useState(false);
-  const [showSummary, setShowSummary] = useState(false);
+  const [showSummary, setShowSummary] = useState(true);
   const [delayMin, setDelayMin] = useState(5);
   const [delayMax, setDelayMax] = useState(30);
 
@@ -161,6 +161,7 @@ function AiConfigPanel() {
   );
   const { data: summaryData, refetch: refetchSummary } = trpc.ai.getSummary.useQuery(undefined, {
     enabled: learningEnabled,
+    refetchInterval: learningEnabled ? 60000 : false, // Auto-refresh every 60s to show latest summary
   });
 
   // Sync delay settings from server
@@ -405,7 +406,7 @@ function AiConfigPanel() {
             <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded">
               <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
               <span className="text-[11px] font-body text-green-400/80">
-                AI学习已开启 · 每小时自动分析新对话并生成策略总结 · 回复时智能判断是否应答 · 模拟真人打字速度
+                AI学习已开启 · 每5分钟自动分析新对话并标记学习 · 收到新消息后60秒内自动触发学习 · 回复时智能判断是否应答 · 模拟真人打字速度
               </span>
             </div>
 
@@ -539,7 +540,7 @@ function AiConfigPanel() {
                   </div>
                 ) : (
                   <div className="text-center py-4">
-                    <p className="text-xs font-body text-muted-foreground/40">还没有学习总结，点击“生成总结”或等待自动学习（每小时一次）</p>
+                    <p className="text-xs font-body text-muted-foreground/40">还没有学习总结，系统每5分钟自动学习一次，也可点击上方"学习并标记"手动触发</p>
                   </div>
                 )}
               </div>

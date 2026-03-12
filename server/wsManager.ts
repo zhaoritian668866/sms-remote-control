@@ -16,6 +16,7 @@ import {
 } from "./db";
 import { notifyOwner } from "./_core/notification";
 import { generateAiReply } from "./aiEngine";
+import { triggerLearning } from "./learningScheduler";
 
 // Track connected devices and dashboard clients
 const connectedDevices = new Map<string, Socket>(); // deviceId -> socket
@@ -281,6 +282,8 @@ export function initWebSocket(server: HttpServer) {
             console.error("[AI] Auto-reply error:", aiErr);
           }
         }
+        // Trigger AI learning when new messages come in (debounced)
+        triggerLearning();
       } catch (err) {
         console.error("[WS] sms_received error:", err);
       }
