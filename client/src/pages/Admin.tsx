@@ -148,15 +148,19 @@ function AiConfigPanel() {
   const [simMessage, setSimMessage] = useState("");
   const [simHistory, setSimHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const [showSimulator, setShowSimulator] = useState(false);
+  const [showLogs, setShowLogs] = useState<"all" | "realtime" | "history" | null>(null);
 
   const { data: learningStats, isLoading: statsLoading, refetch: refetchStats } = trpc.ai.learningStats.useQuery(undefined, {
-    refetchInterval: learningEnabled ? 30000 : false, // Auto-refresh every 30s when learning enabled
+    refetchInterval: learningEnabled ? 30000 : false,
   });
+  const { data: learningLogs, refetch: refetchLogs } = trpc.ai.learningLogs.useQuery(
+    { type: showLogs || "all", limit: 30 },
+    { enabled: !!showLogs }
+  );
   const refreshLearningMutation = trpc.ai.refreshLearning.useMutation({
     onSuccess: (result) => {
       toast.success(`实时学习完成，已学习 ${result.learnedCount} 组中国号码对话`);
-      refetch();
-      refetchStats();
+      refetch(); refetchStats(); refetchLogs();
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -164,8 +168,7 @@ function AiConfigPanel() {
   const learnHistoryMutation = trpc.ai.learnHistory.useMutation({
     onSuccess: (result) => {
       toast.success(`历史学习完成，新增 ${result.newCount} 组，总计 ${result.totalCount} 组`);
-      refetch();
-      refetchStats();
+      refetch(); refetchStats(); refetchLogs();
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -173,8 +176,7 @@ function AiConfigPanel() {
   const clearMemoryMutation = trpc.ai.clearMemory.useMutation({
     onSuccess: () => {
       toast.success("已清除所有AI学习记忆");
-      refetch();
-      refetchStats();
+      refetch(); refetchStats(); refetchLogs();
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -477,11 +479,127 @@ function AiConfigPanel() {
               </Button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-body text-muted-foreground/40">
-                实时学习：读取最新对话记录 · 历史学习：批量学习历史对话并合并去重 · 清除记忆：重置所有已学习数据
-              </span>
+            {/* Learning Progress Logs Toggle */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-body text-muted-foreground/40 mr-1">学习进度：</span>
+              {(["all", "realtime", "history"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setShowLogs(showLogs === t ? null : t)}
+                  className={`text-[10px] px-2 py-0.5 rounded border font-body transition-colors ${
+                    showLogs === t
+                      ? "bg-foreground/10 border-foreground/20 text-foreground/70"
+                      : "border-foreground/5 text-muted-foreground/40 hover:text-foreground/60"
+                  }`}
+                >
+                  {t === "all" ? "全部记录" : t === "realtime" ? "实时学习" : "历史学习"}
+                </button>
+              ))}
             </div>
+
+            {/* Learning Progress Log List */}
+            {showLogs && (
+              <div className="bg-background/30 border border-foreground/10 rounded p-3 space-y-2">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3 h-3 text-foreground/40" />
+                    <span className="text-xs font-serif text-foreground/70">
+                      {showLogs === "all" ? "全部" : showLogs === "realtime" ? "实时" : "历史"}学习进度
+                    </span>
+                  </div>
+                  <button onClick={() => refetchLogs()} className="text-[10px] font-body text-muted-foreground/40 hover:text-foreground/60">刷新</button>
+                </div>
+                {!learningLogs || learningLogs.length === 0 ? (
+                  <div className="text-center py-4 text-[11px] font-body text-muted-foreground/30">暂无学习记录</div>
+                ) : (
+                  <div className="space-y-1.5 max-h-[350px] overflow-y-auto">
+                    {learningLogs.map((log: any) => {
+                      const isRunning = log.status === "running";
+                      const isFailed = log.status === "failed";
+                      const phoneList: string[] = log.phoneNumbers ? (() => { try { return JSON.parse(log.phoneNumbers); } catch { return []; } })() : [];
+                      return (
+                        <div key={log.id} className={`p-2.5 rounded border text-xs ${
+                          isRunning ? "bg-blue-500/5 border-blue-500/15" :
+                          isFailed ? "bg-red-500/5 border-red-500/15" :
+                          "bg-background/20 border-foreground/5"
+                        }`}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              {isRunning ? (
+                                <Loader2 className="w-3 h-3 animate-spin text-blue-400" />
+                              ) : isFailed ? (
+                                <XCircle className="w-3 h-3 text-red-400" />
+                              ) : (
+                                <CheckCircle2 className="w-3 h-3 text-green-400" />
+                              )}
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-body ${
+                                log.type === "realtime" ? "bg-purple-500/15 text-purple-400/80" : "bg-blue-500/15 text-blue-400/80"
+                              }`}>
+                                {log.type === "realtime" ? "实时" : "历史"}
+                              </span>
+                              <span className="text-[10px] font-body text-muted-foreground/40">
+                                {new Date(log.startedAt).toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {log.durationMs != null && (
+                                <span className="text-[9px] font-body text-muted-foreground/30">
+                                  {log.durationMs < 1000 ? `${log.durationMs}ms` : `${(log.durationMs / 1000).toFixed(1)}s`}
+                                </span>
+                              )}
+                              <span className={`text-[9px] font-body ${
+                                isRunning ? "text-blue-400/70" : isFailed ? "text-red-400/70" : "text-green-400/70"
+                              }`}>
+                                {isRunning ? "进行中..." : isFailed ? "失败" : "完成"}
+                              </span>
+                            </div>
+                          </div>
+                          {!isRunning && (
+                            <div className="grid grid-cols-4 gap-2 mb-1">
+                              <div className="text-center">
+                                <div className="text-[9px] font-body text-muted-foreground/30">扫描</div>
+                                <div className="text-[11px] font-serif text-foreground/70">{log.scannedCount}</div>
+                              </div>
+                              <div className="text-center">
+                                <div className="text-[9px] font-body text-muted-foreground/30">新增</div>
+                                <div className="text-[11px] font-serif text-green-400/80">{log.newCount}</div>
+                              </div>
+                              <div className="text-center">
+                                <div className="text-[9px] font-body text-muted-foreground/30">重复</div>
+                                <div className="text-[11px] font-serif text-amber-400/80">{log.duplicateCount}</div>
+                              </div>
+                              <div className="text-center">
+                                <div className="text-[9px] font-body text-muted-foreground/30">总计</div>
+                                <div className="text-[11px] font-serif text-foreground/70">{log.totalCount}</div>
+                              </div>
+                            </div>
+                          )}
+                          {isFailed && log.errorMessage && (
+                            <div className="text-[10px] font-body text-red-400/60 mt-1 px-1">
+                              错误: {log.errorMessage}
+                            </div>
+                          )}
+                          {phoneList.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {phoneList.slice(0, 8).map((phone: string, i: number) => (
+                                <span key={i} className="text-[9px] px-1.5 py-0.5 bg-foreground/5 rounded font-body text-muted-foreground/40">
+                                  {phone}
+                                </span>
+                              ))}
+                              {phoneList.length > 8 && (
+                                <span className="text-[9px] px-1.5 py-0.5 font-body text-muted-foreground/30">
+                                  +{phoneList.length - 8} 更多
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Conversation Simulator */}
             {showSimulator && (

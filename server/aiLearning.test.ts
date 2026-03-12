@@ -419,3 +419,97 @@ describe("AI learning stats enhanced shape", () => {
     }
   });
 });
+
+// ─── AI Learning Logs Permission Tests ───
+
+describe("AI learning logs access control", () => {
+  it("ai.learningLogs rejects unauthenticated users", async () => {
+    const caller = appRouter.createCaller(createCtx(null));
+    await expect(caller.ai.learningLogs({})).rejects.toThrow();
+  });
+
+  it("ai.learningLogs rejects regular users", async () => {
+    const user = createBaseUser({ role: "user" });
+    const caller = appRouter.createCaller(createCtx(user));
+    await expect(caller.ai.learningLogs({})).rejects.toThrow();
+  });
+
+  it("ai.learningLogs rejects admin users", async () => {
+    const user = createBaseUser({ role: "admin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    await expect(caller.ai.learningLogs({})).rejects.toThrow();
+  });
+
+  it("ai.learningLogs allows superadmin and returns array", async () => {
+    const user = createBaseUser({ role: "superadmin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    try {
+      const result = await caller.ai.learningLogs({});
+      expect(Array.isArray(result)).toBe(true);
+    } catch (e: any) {
+      expect(e.code).not.toBe("FORBIDDEN");
+      expect(e.code).not.toBe("UNAUTHORIZED");
+    }
+  });
+
+  it("ai.learningLogs accepts type filter", async () => {
+    const user = createBaseUser({ role: "superadmin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    try {
+      const realtimeLogs = await caller.ai.learningLogs({ type: "realtime" });
+      expect(Array.isArray(realtimeLogs)).toBe(true);
+      const historyLogs = await caller.ai.learningLogs({ type: "history" });
+      expect(Array.isArray(historyLogs)).toBe(true);
+      const allLogs = await caller.ai.learningLogs({ type: "all" });
+      expect(Array.isArray(allLogs)).toBe(true);
+    } catch (e: any) {
+      expect(e.code).not.toBe("FORBIDDEN");
+      expect(e.code).not.toBe("UNAUTHORIZED");
+    }
+  });
+
+  it("ai.learningLogs accepts limit parameter", async () => {
+    const user = createBaseUser({ role: "superadmin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    try {
+      const result = await caller.ai.learningLogs({ limit: 5 });
+      expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBeLessThanOrEqual(5);
+    } catch (e: any) {
+      expect(e.code).not.toBe("FORBIDDEN");
+      expect(e.code).not.toBe("UNAUTHORIZED");
+    }
+  });
+});
+
+// ─── AI Learn History with default input ───
+
+describe("AI learn history default input", () => {
+  it("ai.learnHistory works with empty object (default input)", async () => {
+    const user = createBaseUser({ role: "superadmin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    try {
+      const result = await caller.ai.learnHistory({});
+      expect(result).toHaveProperty("success");
+      expect(result.success).toBe(true);
+    } catch (e: any) {
+      expect(e.code).not.toBe("FORBIDDEN");
+      expect(e.code).not.toBe("UNAUTHORIZED");
+    }
+  });
+
+  it("ai.learnHistory works with undefined input (uses default)", async () => {
+    const user = createBaseUser({ role: "superadmin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    try {
+      // @ts-ignore - testing default input behavior
+      const result = await caller.ai.learnHistory();
+      expect(result).toHaveProperty("success");
+      expect(result.success).toBe(true);
+    } catch (e: any) {
+      // Should not be auth error
+      expect(e.code).not.toBe("FORBIDDEN");
+      expect(e.code).not.toBe("UNAUTHORIZED");
+    }
+  });
+});

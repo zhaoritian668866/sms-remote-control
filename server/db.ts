@@ -1,6 +1,6 @@
 import { eq, and, desc, like, or, gte, lte, sql, asc, count, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, devices, pairingTokens, messages, systemConfig, groups, smsTemplates, deviceContacts, bulkTasks, pinnedContacts, contactReadStatus, aiConfig, aiUserSettings, aiConversations, type InsertDevice, type InsertPairingToken, type InsertMessage, type InsertGroup, type InsertSmsTemplate, type InsertDeviceContact, type InsertBulkTask, type InsertAiConfig, type AiConfig, type AiUserSettings, type AiConversation } from "../drizzle/schema";
+import { InsertUser, users, devices, pairingTokens, messages, systemConfig, groups, smsTemplates, deviceContacts, bulkTasks, pinnedContacts, contactReadStatus, aiConfig, aiUserSettings, aiConversations, aiLearningLogs, type InsertDevice, type InsertPairingToken, type InsertMessage, type InsertGroup, type InsertSmsTemplate, type InsertDeviceContact, type InsertBulkTask, type InsertAiConfig, type AiConfig, type AiUserSettings, type AiConversation, type AiLearningLog } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -1687,4 +1687,76 @@ export async function fetchHistoricalSamples(beforeTimestamp?: number, limit: nu
   }
 
   return samples;
+}
+
+// ─── AI Learning Logs ───
+
+/**
+ * Create a new learning log entry (status: running)
+ */
+export async function createLearningLog(type: "realtime" | "history"): Promise<number | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(aiLearningLogs).values({
+    type,
+    status: "running",
+    startedAt: new Date(),
+  });
+  return (result as any)[0]?.insertId ?? null;
+}
+
+/**
+ * Update a learning log with results
+ */
+export async function updateLearningLog(
+  id: number,
+  data: {
+    status: "completed" | "failed";
+    newCount?: number;
+    totalCount?: number;
+    scannedCount?: number;
+    filteredCount?: number;
+    duplicateCount?: number;
+    phoneNumbers?: string[];
+    errorMessage?: string;
+    durationMs?: number;
+  }
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(aiLearningLogs).set({
+    status: data.status,
+    newCount: data.newCount ?? 0,
+    totalCount: data.totalCount ?? 0,
+    scannedCount: data.scannedCount ?? 0,
+    filteredCount: data.filteredCount ?? 0,
+    duplicateCount: data.duplicateCount ?? 0,
+    phoneNumbers: data.phoneNumbers ? JSON.stringify(data.phoneNumbers) : null,
+    errorMessage: data.errorMessage ?? null,
+    durationMs: data.durationMs ?? null,
+    completedAt: new Date(),
+  }).where(eq(aiLearningLogs.id, id));
+}
+
+/**
+ * Get recent learning logs for display
+ */
+export async function getLearningLogs(limit: number = 20): Promise<AiLearningLog[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(aiLearningLogs)
+    .orderBy(desc(aiLearningLogs.startedAt))
+    .limit(limit);
+}
+
+/**
+ * Get learning logs by type
+ */
+export async function getLearningLogsByType(type: "realtime" | "history", limit: number = 20): Promise<AiLearningLog[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(aiLearningLogs)
+    .where(eq(aiLearningLogs.type, type))
+    .orderBy(desc(aiLearningLogs.startedAt))
+    .limit(limit);
 }

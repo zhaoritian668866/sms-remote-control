@@ -88,6 +88,10 @@ import {
   updateAiLearningState,
   clearAiLearningMemory,
   fetchHistoricalSamples,
+  createLearningLog,
+  updateLearningLog,
+  getLearningLogs,
+  getLearningLogsByType,
 } from "./db";
 import { generateAiReply, testAiConnection, simulateConversation } from "./aiEngine";
 import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest } from "./wsManager";
@@ -1299,9 +1303,49 @@ export const appRouter = router({
 
     // Superadmin: Toggle learning and refresh samples (real-time monitoring)
     refreshLearning: superadminProcedure.mutation(async () => {
-      const samples = await fetchConversationSamples(50);
-      await updateAiLearningState(samples.length, JSON.stringify(samples));
-      return { success: true, learnedCount: samples.length };
+      const startTime = Date.now();
+      const logId = await createLearningLog("realtime");
+      try {
+        const samples = await fetchConversationSamples(50);
+        // Count stats
+        const config = await getAiConfig();
+        let existingSamples: any[] = [];
+        try {
+          if (config?.learnedSamples) existingSamples = JSON.parse(config.learnedSamples);
+        } catch {}
+        const existingKeys = new Set(existingSamples.map((s: any) => `${s.deviceId}-${s.phoneNumber}`));
+        const newSamples = samples.filter(s => !existingKeys.has(`${s.deviceId}-${s.phoneNumber}`));
+        const merged = [...existingSamples, ...newSamples];
+        // If no new samples, just update with current samples
+        if (newSamples.length === 0 && samples.length > 0) {
+          await updateAiLearningState(samples.length, JSON.stringify(samples));
+        } else {
+          await updateAiLearningState(merged.length, JSON.stringify(merged));
+        }
+        const phoneNumbers = samples.map(s => s.phoneNumber);
+        if (logId) {
+          await updateLearningLog(logId, {
+            status: "completed",
+            newCount: newSamples.length,
+            totalCount: merged.length,
+            scannedCount: samples.length,
+            filteredCount: 0,
+            duplicateCount: samples.length - newSamples.length,
+            phoneNumbers,
+            durationMs: Date.now() - startTime,
+          });
+        }
+        return { success: true, learnedCount: samples.length };
+      } catch (error: any) {
+        if (logId) {
+          await updateLearningLog(logId, {
+            status: "failed",
+            errorMessage: error.message || "实时学习失败",
+            durationMs: Date.now() - startTime,
+          });
+        }
+        throw error;
+      }
     }),
 
     // Superadmin: Learn from historical records (batch)
@@ -1309,25 +1353,72 @@ export const appRouter = router({
       .input(z.object({
         beforeTimestamp: z.number().optional(),
         limit: z.number().min(1).max(500).optional(),
-      }).optional())
+      }).optional().default({}))
       .mutation(async ({ input }) => {
-        const limit = input?.limit ?? 100;
-        const samples = await fetchHistoricalSamples(input?.beforeTimestamp, limit);
-        if (samples.length > 0) {
-          // Merge with existing samples
-          const config = await getAiConfig();
-          let existingSamples: any[] = [];
-          try {
-            if (config?.learnedSamples) existingSamples = JSON.parse(config.learnedSamples);
-          } catch {}
-          // Deduplicate by deviceId+phoneNumber
-          const existingKeys = new Set(existingSamples.map((s: any) => `${s.deviceId}-${s.phoneNumber}`));
-          const newSamples = samples.filter(s => !existingKeys.has(`${s.deviceId}-${s.phoneNumber}`));
-          const merged = [...existingSamples, ...newSamples];
-          await updateAiLearningState(merged.length, JSON.stringify(merged));
-          return { success: true, newCount: newSamples.length, totalCount: merged.length };
+        const startTime = Date.now();
+        const logId = await createLearningLog("history");
+        try {
+          const limit = input?.limit ?? 100;
+          const samples = await fetchHistoricalSamples(input?.beforeTimestamp, limit);
+          if (samples.length > 0) {
+            const config = await getAiConfig();
+            let existingSamples: any[] = [];
+            try {
+              if (config?.learnedSamples) existingSamples = JSON.parse(config.learnedSamples);
+            } catch {}
+            const existingKeys = new Set(existingSamples.map((s: any) => `${s.deviceId}-${s.phoneNumber}`));
+            const newSamples = samples.filter(s => !existingKeys.has(`${s.deviceId}-${s.phoneNumber}`));
+            const merged = [...existingSamples, ...newSamples];
+            await updateAiLearningState(merged.length, JSON.stringify(merged));
+            const phoneNumbers = newSamples.map(s => s.phoneNumber);
+            if (logId) {
+              await updateLearningLog(logId, {
+                status: "completed",
+                newCount: newSamples.length,
+                totalCount: merged.length,
+                scannedCount: samples.length,
+                filteredCount: 0,
+                duplicateCount: samples.length - newSamples.length,
+                phoneNumbers,
+                durationMs: Date.now() - startTime,
+              });
+            }
+            return { success: true, newCount: newSamples.length, totalCount: merged.length };
+          }
+          if (logId) {
+            await updateLearningLog(logId, {
+              status: "completed",
+              newCount: 0,
+              totalCount: 0,
+              scannedCount: 0,
+              durationMs: Date.now() - startTime,
+            });
+          }
+          return { success: true, newCount: 0, totalCount: 0 };
+        } catch (error: any) {
+          if (logId) {
+            await updateLearningLog(logId, {
+              status: "failed",
+              errorMessage: error.message || "历史学习失败",
+              durationMs: Date.now() - startTime,
+            });
+          }
+          throw error;
         }
-        return { success: true, newCount: 0, totalCount: 0 };
+      }),
+
+    // Superadmin: Get learning logs (progress visualization)
+    learningLogs: superadminProcedure
+      .input(z.object({
+        type: z.enum(["realtime", "history", "all"]).optional(),
+        limit: z.number().min(1).max(100).optional(),
+      }).optional().default({}))
+      .query(async ({ input }) => {
+        const limit = input?.limit ?? 20;
+        if (input?.type && input.type !== "all") {
+          return getLearningLogsByType(input.type, limit);
+        }
+        return getLearningLogs(limit);
       }),
 
     // Superadmin: Clear all learned memory

@@ -313,3 +313,38 @@ export const aiConversations = mysqlTable("ai_conversations", {
 
 export type AiConversation = typeof aiConversations.$inferSelect;
 export type InsertAiConversation = typeof aiConversations.$inferInsert;
+
+/**
+ * AI learning logs - records each learning operation with detailed progress.
+ * Used for visualizing learning history and progress tracking.
+ */
+export const aiLearningLogs = mysqlTable("ai_learning_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Type of learning: realtime or history */
+  type: mysqlEnum("type", ["realtime", "history"]).notNull(),
+  /** Status of this learning operation */
+  status: mysqlEnum("status", ["running", "completed", "failed"]).default("running").notNull(),
+  /** Number of new samples learned in this operation */
+  newCount: int("newCount").default(0).notNull(),
+  /** Total samples after this operation */
+  totalCount: int("totalCount").default(0).notNull(),
+  /** Number of conversations scanned */
+  scannedCount: int("scannedCount").default(0).notNull(),
+  /** Number of conversations filtered (non-Chinese numbers) */
+  filteredCount: int("filteredCount").default(0).notNull(),
+  /** Number of duplicate conversations skipped */
+  duplicateCount: int("duplicateCount").default(0).notNull(),
+  /** Detailed phone numbers learned (JSON array of strings) */
+  phoneNumbers: text("phoneNumbers"),
+  /** Error message if failed */
+  errorMessage: text("errorMessage"),
+  /** Duration of the operation in milliseconds */
+  durationMs: int("durationMs"),
+  /** Started at timestamp */
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  /** Completed at timestamp */
+  completedAt: timestamp("completedAt"),
+});
+
+export type AiLearningLog = typeof aiLearningLogs.$inferSelect;
+export type InsertAiLearningLog = typeof aiLearningLogs.$inferInsert;
