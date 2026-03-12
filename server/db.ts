@@ -1467,60 +1467,61 @@ function isChineseNumber(phone: string): boolean {
 }
 
 /**
- * Fetch real human conversation samples from the messages table.
- * Groups messages by device+phoneNumber into conversation threads,
- * only includes conversations with both incoming and outgoing messages (real human replies).
- * Only includes Chinese phone numbers (+86), filters out overseas test numbers.
+ * Fetch real human conversation samples from the messages table (BATCH optimized).
+ * Uses a single query to get all messages, then groups in memory.
+ * Only includes Chinese phone numbers, filters out overseas test numbers.
  */
 export async function fetchConversationSamples(limit: number = 50): Promise<LearnedSample[]> {
   const db = await getDb();
   if (!db) return [];
 
-  // Get recent outgoing messages (human replies) to find active conversations
-  const recentOutgoing = await db.select({
+  // Chinese number SQL filter
+  const cnFilter = sql`(
+    ${messages.phoneNumber} LIKE '+86%'
+    OR (${messages.phoneNumber} LIKE '86%' AND LENGTH(${messages.phoneNumber}) >= 13)
+    OR (${messages.phoneNumber} REGEXP '^1[3-9][0-9]{9}$')
+    OR (LENGTH(${messages.phoneNumber}) = 11 AND ${messages.phoneNumber} LIKE '1%')
+  )`;
+
+  // Single batch query: get all Chinese number messages, ordered by time
+  const allMessages = await db.select({
     deviceId: messages.deviceId,
     phoneNumber: messages.phoneNumber,
+    direction: messages.direction,
+    body: messages.body,
+    smsTimestamp: messages.smsTimestamp,
   }).from(messages)
-    .where(eq(messages.direction, "outgoing"))
-    .groupBy(messages.deviceId, messages.phoneNumber)
-    .orderBy(desc(sql`MAX(${messages.smsTimestamp})`))
-    .limit(limit * 2); // Fetch more to compensate for filtering
+    .where(cnFilter)
+    .orderBy(desc(messages.smsTimestamp))
+    .limit(5000); // Cap at 5000 messages for memory safety
+
+  // Group by deviceId+phoneNumber in memory
+  type MsgRow = { deviceId: number; phoneNumber: string; direction: "incoming" | "outgoing"; body: string; smsTimestamp: number };
+  const threadMap = new Map<string, MsgRow[]>();
+  for (const msg of allMessages) {
+    const key = `${msg.deviceId}-${msg.phoneNumber}`;
+    if (!threadMap.has(key)) threadMap.set(key, []);
+    const thread = threadMap.get(key)!;
+    if (thread.length < 20) thread.push(msg);
+  }
 
   const samples: LearnedSample[] = [];
+  const entries = Array.from(threadMap.entries());
+  for (const [key, thread] of entries) {
+    const hasIncoming = thread.some((m: MsgRow) => m.direction === 'incoming');
+    const hasOutgoing = thread.some((m: MsgRow) => m.direction === 'outgoing');
+    if (!hasIncoming || !hasOutgoing) continue;
 
-  for (const conv of recentOutgoing) {
-    // Filter: only Chinese numbers
-    if (!isChineseNumber(conv.phoneNumber)) continue;
-
-    // Get the last 20 messages for this conversation thread
-    const thread = await db.select({
-      direction: messages.direction,
-      body: messages.body,
-      smsTimestamp: messages.smsTimestamp,
-    }).from(messages)
-      .where(and(
-        eq(messages.deviceId, conv.deviceId),
-        eq(messages.phoneNumber, conv.phoneNumber),
-      ))
-      .orderBy(desc(messages.smsTimestamp))
-      .limit(20);
-
-    // Only include if there are both incoming and outgoing
-    const hasIncoming = thread.some(m => m.direction === 'incoming');
-    const hasOutgoing = thread.some(m => m.direction === 'outgoing');
-    if (hasIncoming && hasOutgoing) {
-      samples.push({
-        deviceId: conv.deviceId,
-        phoneNumber: conv.phoneNumber,
-        messages: thread.reverse().map(m => ({
-          direction: m.direction,
-          body: m.body,
-          timestamp: m.smsTimestamp,
-        })),
-        learnedAt: Date.now(),
-      });
-    }
-
+    samples.push({
+      deviceId: thread[0].deviceId,
+      phoneNumber: thread[0].phoneNumber,
+      messages: thread.reverse().map((m: MsgRow) => ({
+        direction: m.direction,
+        body: m.body,
+        timestamp: m.smsTimestamp,
+      })),
+      learnedAt: Date.now(),
+    });
     if (samples.length >= limit) break;
   }
 
@@ -1625,65 +1626,84 @@ export async function clearAiLearningMemory(): Promise<void> {
 }
 
 /**
- * Fetch historical conversation samples for batch learning.
- * Returns conversations older than the given timestamp, Chinese numbers only.
+ * Fetch historical conversation samples for batch learning (BATCH optimized).
+ * Uses a single query, groups in memory. Chinese numbers only.
+ * Supports progress callback for real-time progress updates.
  */
-export async function fetchHistoricalSamples(beforeTimestamp?: number, limit: number = 100): Promise<LearnedSample[]> {
+export async function fetchHistoricalSamples(
+  beforeTimestamp?: number,
+  limit: number = 500,
+  onProgress?: (scanned: number, found: number) => Promise<void>,
+): Promise<LearnedSample[]> {
   const db = await getDb();
   if (!db) return [];
 
-  const conditions: any[] = [eq(messages.direction, "outgoing")];
+  // Chinese number SQL filter
+  const cnFilter = sql`(
+    ${messages.phoneNumber} LIKE '+86%'
+    OR (${messages.phoneNumber} LIKE '86%' AND LENGTH(${messages.phoneNumber}) >= 13)
+    OR (${messages.phoneNumber} REGEXP '^1[3-9][0-9]{9}$')
+    OR (LENGTH(${messages.phoneNumber}) = 11 AND ${messages.phoneNumber} LIKE '1%')
+  )`;
+
+  const conditions: any[] = [cnFilter];
   if (beforeTimestamp) {
     conditions.push(lte(messages.smsTimestamp, beforeTimestamp));
   }
 
-  const recentOutgoing = await db.select({
+  // Single batch query: get all Chinese number messages
+  const allMessages = await db.select({
     deviceId: messages.deviceId,
     phoneNumber: messages.phoneNumber,
+    direction: messages.direction,
+    body: messages.body,
+    smsTimestamp: messages.smsTimestamp,
   }).from(messages)
     .where(and(...conditions))
-    .groupBy(messages.deviceId, messages.phoneNumber)
-    .orderBy(desc(sql`MAX(${messages.smsTimestamp})`))
-    .limit(limit * 2);
+    .orderBy(desc(messages.smsTimestamp))
+    .limit(20000); // Allow more for history
+
+  // Group by deviceId+phoneNumber in memory
+  type HistMsgRow = { deviceId: number; phoneNumber: string; direction: "incoming" | "outgoing"; body: string; smsTimestamp: number };
+  const threadMap = new Map<string, HistMsgRow[]>();
+  for (const msg of allMessages) {
+    const key = `${msg.deviceId}-${msg.phoneNumber}`;
+    if (!threadMap.has(key)) threadMap.set(key, []);
+    const thread = threadMap.get(key)!;
+    if (thread.length < 20) thread.push(msg);
+  }
 
   const samples: LearnedSample[] = [];
+  let scannedCount = 0;
+  const entries = Array.from(threadMap.entries());
+  for (const [key, thread] of entries) {
+    scannedCount++;
+    const hasIncoming = thread.some((m: HistMsgRow) => m.direction === 'incoming');
+    const hasOutgoing = thread.some((m: HistMsgRow) => m.direction === 'outgoing');
+    if (!hasIncoming || !hasOutgoing) continue;
 
-  for (const conv of recentOutgoing) {
-    if (!isChineseNumber(conv.phoneNumber)) continue;
+    samples.push({
+      deviceId: thread[0].deviceId,
+      phoneNumber: thread[0].phoneNumber,
+      messages: thread.reverse().map((m: HistMsgRow) => ({
+        direction: m.direction,
+        body: m.body,
+        timestamp: m.smsTimestamp,
+      })),
+      learnedAt: Date.now(),
+    });
 
-    const threadConditions: any[] = [
-      eq(messages.deviceId, conv.deviceId),
-      eq(messages.phoneNumber, conv.phoneNumber),
-    ];
-    if (beforeTimestamp) {
-      threadConditions.push(lte(messages.smsTimestamp, beforeTimestamp));
-    }
-
-    const thread = await db.select({
-      direction: messages.direction,
-      body: messages.body,
-      smsTimestamp: messages.smsTimestamp,
-    }).from(messages)
-      .where(and(...threadConditions))
-      .orderBy(desc(messages.smsTimestamp))
-      .limit(20);
-
-    const hasIncoming = thread.some(m => m.direction === 'incoming');
-    const hasOutgoing = thread.some(m => m.direction === 'outgoing');
-    if (hasIncoming && hasOutgoing) {
-      samples.push({
-        deviceId: conv.deviceId,
-        phoneNumber: conv.phoneNumber,
-        messages: thread.reverse().map(m => ({
-          direction: m.direction,
-          body: m.body,
-          timestamp: m.smsTimestamp,
-        })),
-        learnedAt: Date.now(),
-      });
+    // Report progress every 10 found samples
+    if (onProgress && samples.length % 10 === 0) {
+      await onProgress(scannedCount, samples.length);
     }
 
     if (samples.length >= limit) break;
+  }
+
+  // Final progress report
+  if (onProgress) {
+    await onProgress(scannedCount, samples.length);
   }
 
   return samples;
@@ -1759,4 +1779,42 @@ export async function getLearningLogsByType(type: "realtime" | "history", limit:
     .where(eq(aiLearningLogs.type, type))
     .orderBy(desc(aiLearningLogs.startedAt))
     .limit(limit);
+}
+
+/**
+ * Cleanup stale learning logs that have been "running" for more than 5 minutes.
+ * Marks them as failed with a timeout error.
+ */
+export async function cleanupStaleLearningLogs(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+  const result = await db.update(aiLearningLogs).set({
+    status: "failed",
+    errorMessage: "学习任务超时（超过5分钟未完成）",
+    completedAt: new Date(),
+  }).where(
+    and(
+      eq(aiLearningLogs.status, "running"),
+      lte(aiLearningLogs.startedAt, fiveMinAgo),
+    )
+  );
+  return (result as any)[0]?.affectedRows ?? 0;
+}
+
+/**
+ * Partially update a learning log's progress (while still running).
+ */
+export async function updateLearningLogProgress(
+  id: number,
+  data: { scannedCount: number; newCount: number; totalCount?: number; duplicateCount?: number },
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(aiLearningLogs).set({
+    scannedCount: data.scannedCount,
+    newCount: data.newCount,
+    totalCount: data.totalCount ?? 0,
+    duplicateCount: data.duplicateCount ?? 0,
+  }).where(eq(aiLearningLogs.id, id));
 }

@@ -150,19 +150,25 @@ function AiConfigPanel() {
   const [showSimulator, setShowSimulator] = useState(false);
   const [showLogs, setShowLogs] = useState<"all" | "realtime" | "history" | null>(null);
 
+  const [isAutoLearning, setIsAutoLearning] = useState(false);
+
   const { data: learningStats, isLoading: statsLoading, refetch: refetchStats } = trpc.ai.learningStats.useQuery(undefined, {
-    refetchInterval: learningEnabled ? 30000 : false,
+    refetchInterval: learningEnabled ? 10000 : false, // Refresh stats every 10s when learning enabled
   });
   const { data: learningLogs, refetch: refetchLogs } = trpc.ai.learningLogs.useQuery(
     { type: showLogs || "all", limit: 30 },
-    { enabled: !!showLogs }
+    { enabled: !!showLogs, refetchInterval: showLogs ? 3000 : false } // Poll logs every 3s when viewing
   );
   const refreshLearningMutation = trpc.ai.refreshLearning.useMutation({
     onSuccess: (result) => {
-      toast.success(`实时学习完成，已学习 ${result.learnedCount} 组中国号码对话`);
+      if (!isAutoLearning) {
+        toast.success(`实时学习完成，新增 ${result.newCount} 组，总计 ${result.learnedCount} 组`);
+      }
       refetch(); refetchStats(); refetchLogs();
     },
-    onError: (err: any) => toast.error(err.message),
+    onError: (err: any) => {
+      if (!isAutoLearning) toast.error(err.message);
+    },
   });
 
   const learnHistoryMutation = trpc.ai.learnHistory.useMutation({
@@ -180,6 +186,23 @@ function AiConfigPanel() {
     },
     onError: (err: any) => toast.error(err.message),
   });
+
+  // Auto-learning timer: trigger refreshLearning every 60s when learning is enabled
+  useEffect(() => {
+    if (!learningEnabled) {
+      setIsAutoLearning(false);
+      return;
+    }
+    setIsAutoLearning(true);
+    // Trigger immediately on enable
+    refreshLearningMutation.mutate();
+    const timer = setInterval(() => {
+      if (!refreshLearningMutation.isPending && !learnHistoryMutation.isPending) {
+        refreshLearningMutation.mutate();
+      }
+    }, 60000); // Every 60 seconds
+    return () => { clearInterval(timer); setIsAutoLearning(false); };
+  }, [learningEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const simulateMutation = trpc.ai.simulate.useMutation({
     onSuccess: (result) => {
@@ -384,7 +407,15 @@ function AiConfigPanel() {
             {/* Auto-monitor indicator */}
             <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded">
               <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-[11px] font-body text-green-400/80">实时监测中 · 仅学习中国号码对话 · 每30秒自动刷新</span>
+              <span className="text-[11px] font-body text-green-400/80">
+                自动学习中 · 仅学习中国号码对话 · 每60秒自动学习
+                {refreshLearningMutation.isPending && " · 正在学习..."}
+              </span>
+              {learningStats && (
+                <span className="text-[10px] font-body text-green-400/60 ml-auto">
+                  已学习 {learningStats.learnedCount} 组
+                </span>
+              )}
             </div>
 
             {/* Learning Stats */}
@@ -554,15 +585,34 @@ function AiConfigPanel() {
                               </span>
                             </div>
                           </div>
-                          {!isRunning && (
-                            <div className="grid grid-cols-4 gap-2 mb-1">
+                          {/* Always show progress stats - real-time for running, final for completed */}
+                          <div className="space-y-1.5">
+                            {isRunning && (log.scannedCount > 0 || log.newCount > 0) && (
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className="flex-1 h-1.5 bg-foreground/5 rounded-full overflow-hidden">
+                                  <div className="h-full bg-blue-400/60 rounded-full animate-pulse" style={{ width: '100%' }} />
+                                </div>
+                                <span className="text-[10px] font-body text-blue-400/70 whitespace-nowrap">
+                                  已扫描 {log.scannedCount} 组 · 找到 {log.newCount} 组
+                                </span>
+                              </div>
+                            )}
+                            {isRunning && log.scannedCount === 0 && log.newCount === 0 && (
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className="flex-1 h-1.5 bg-foreground/5 rounded-full overflow-hidden">
+                                  <div className="h-full bg-blue-400/40 rounded-full animate-pulse" style={{ width: '30%' }} />
+                                </div>
+                                <span className="text-[10px] font-body text-blue-400/60 whitespace-nowrap">正在加载数据...</span>
+                              </div>
+                            )}
+                            <div className="grid grid-cols-4 gap-2">
                               <div className="text-center">
                                 <div className="text-[9px] font-body text-muted-foreground/30">扫描</div>
-                                <div className="text-[11px] font-serif text-foreground/70">{log.scannedCount}</div>
+                                <div className={`text-[11px] font-serif ${isRunning ? 'text-blue-400/80' : 'text-foreground/70'}`}>{log.scannedCount}</div>
                               </div>
                               <div className="text-center">
                                 <div className="text-[9px] font-body text-muted-foreground/30">新增</div>
-                                <div className="text-[11px] font-serif text-green-400/80">{log.newCount}</div>
+                                <div className={`text-[11px] font-serif ${isRunning ? 'text-blue-400/80' : 'text-green-400/80'}`}>{log.newCount}</div>
                               </div>
                               <div className="text-center">
                                 <div className="text-[9px] font-body text-muted-foreground/30">重复</div>
@@ -573,7 +623,7 @@ function AiConfigPanel() {
                                 <div className="text-[11px] font-serif text-foreground/70">{log.totalCount}</div>
                               </div>
                             </div>
-                          )}
+                          </div>
                           {isFailed && log.errorMessage && (
                             <div className="text-[10px] font-body text-red-400/60 mt-1 px-1">
                               错误: {log.errorMessage}
