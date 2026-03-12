@@ -9,7 +9,8 @@ import {
   BarChart3, Crown, Settings, Link2, ExternalLink, Plus,
   Building2, Hash, Copy, Eye, EyeOff, Layers, Bot, Zap,
   CheckCircle2, XCircle, AlertTriangle, BookOpen, RefreshCw,
-  Brain, Database, TrendingUp, MessageCircle,
+  Brain, Database, TrendingUp, MessageCircle, Trash2, History,
+  Send, Sparkles, Clock,
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
@@ -143,12 +144,48 @@ function AiConfigPanel() {
     },
   });
 
-  const { data: learningStats, isLoading: statsLoading, refetch: refetchStats } = trpc.ai.learningStats.useQuery();
+  // Simulation state
+  const [simMessage, setSimMessage] = useState("");
+  const [simHistory, setSimHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [showSimulator, setShowSimulator] = useState(false);
+
+  const { data: learningStats, isLoading: statsLoading, refetch: refetchStats } = trpc.ai.learningStats.useQuery(undefined, {
+    refetchInterval: learningEnabled ? 30000 : false, // Auto-refresh every 30s when learning enabled
+  });
   const refreshLearningMutation = trpc.ai.refreshLearning.useMutation({
     onSuccess: (result) => {
-      toast.success(`学习完成，已学习 ${result.learnedCount} 组对话`);
+      toast.success(`实时学习完成，已学习 ${result.learnedCount} 组中国号码对话`);
       refetch();
       refetchStats();
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const learnHistoryMutation = trpc.ai.learnHistory.useMutation({
+    onSuccess: (result) => {
+      toast.success(`历史学习完成，新增 ${result.newCount} 组，总计 ${result.totalCount} 组`);
+      refetch();
+      refetchStats();
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const clearMemoryMutation = trpc.ai.clearMemory.useMutation({
+    onSuccess: () => {
+      toast.success("已清除所有AI学习记忆");
+      refetch();
+      refetchStats();
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
+
+  const simulateMutation = trpc.ai.simulate.useMutation({
+    onSuccess: (result) => {
+      if (result.success && result.reply) {
+        setSimHistory(prev => [...prev, { role: "assistant", content: result.reply! }]);
+      } else {
+        toast.error(result.error || "模拟失败");
+      }
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -337,17 +374,23 @@ function AiConfigPanel() {
           </button>
         </div>
         <p className="text-xs font-body text-muted-foreground/50 mb-4">
-          开启后，AI 将学习数据库中真实的人工对话记录（历史 + 实时），模仿操作人员的聊天风格和话术技巧。
+          开启后，AI 将自动监测并学习数据库中中国号码（+86）的真实人工对话记录，海外号码测试数据将自动过滤。每30秒自动刷新监测。
         </p>
 
         {learningEnabled && (
           <div className="space-y-4">
+            {/* Auto-monitor indicator */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded">
+              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-[11px] font-body text-green-400/80">实时监测中 · 仅学习中国号码对话 · 每30秒自动刷新</span>
+            </div>
+
             {/* Learning Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="bg-background/40 border border-foreground/5 p-3 rounded">
                 <div className="flex items-center gap-1.5 mb-1">
                   <Database className="w-3 h-3 text-purple-400/60" />
-                  <span className="text-[10px] font-body text-muted-foreground/50">总消息数</span>
+                  <span className="text-[10px] font-body text-muted-foreground/50">中国号码消息</span>
                 </div>
                 <p className="text-lg font-serif text-foreground">
                   {statsLoading ? "-" : (learningStats?.totalMessages ?? 0).toLocaleString()}
@@ -377,18 +420,18 @@ function AiConfigPanel() {
                   <span className="text-[10px] font-body text-muted-foreground/50">已学习样本</span>
                 </div>
                 <p className="text-lg font-serif text-foreground">
-                  {config?.learnedCount ?? 0}
+                  {learningStats?.learnedCount ?? 0}
                 </p>
-                {config?.lastLearnedAt && (
+                {learningStats?.lastLearnedAt && (
                   <p className="text-[9px] font-body text-muted-foreground/30 mt-0.5">
-                    上次: {new Date(config.lastLearnedAt).toLocaleString()}
+                    上次: {new Date(learningStats.lastLearnedAt).toLocaleString()}
                   </p>
                 )}
               </div>
             </div>
 
-            {/* Refresh Button */}
-            <div className="flex items-center gap-3">
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
                 onClick={() => refreshLearningMutation.mutate()}
@@ -396,19 +439,147 @@ function AiConfigPanel() {
                 className="h-8 px-4 bg-purple-500/20 border border-purple-500/30 text-purple-400/80 hover:bg-purple-500/30 text-xs font-body"
               >
                 {refreshLearningMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-                立即学习
+                实时学习
               </Button>
+              <Button
+                size="sm"
+                onClick={() => learnHistoryMutation.mutate({})}
+                disabled={learnHistoryMutation.isPending}
+                className="h-8 px-4 bg-blue-500/20 border border-blue-500/30 text-blue-400/80 hover:bg-blue-500/30 text-xs font-body"
+              >
+                {learnHistoryMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <History className="w-3 h-3 mr-1" />}
+                历史记录学习
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (confirm("确定要清除所有AI学习记忆吗？此操作不可恢复。")) {
+                    clearMemoryMutation.mutate();
+                  }
+                }}
+                disabled={clearMemoryMutation.isPending}
+                className="h-8 px-4 bg-red-500/20 border border-red-500/30 text-red-400/80 hover:bg-red-500/30 text-xs font-body"
+              >
+                {clearMemoryMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Trash2 className="w-3 h-3 mr-1" />}
+                清除记忆
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setShowSimulator(!showSimulator)}
+                className={`h-8 px-4 border text-xs font-body ${
+                  showSimulator
+                    ? "bg-amber-500/30 border-amber-500/40 text-amber-400/90"
+                    : "bg-amber-500/20 border-amber-500/30 text-amber-400/80 hover:bg-amber-500/30"
+                }`}
+              >
+                <Sparkles className="w-3 h-3 mr-1" />
+                对话模拟
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-2">
               <span className="text-[10px] font-body text-muted-foreground/40">
-                AI 将从数据库读取最新的真实对话记录进行学习（每小时自动刷新缓存）
+                实时学习：读取最新对话记录 · 历史学习：批量学习历史对话并合并去重 · 清除记忆：重置所有已学习数据
               </span>
             </div>
+
+            {/* Conversation Simulator */}
+            {showSimulator && (
+              <div className="bg-background/30 border border-amber-500/20 rounded p-4 space-y-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400/70" />
+                  <span className="text-xs font-serif text-foreground/80">对话模拟器</span>
+                  <span className="text-[10px] font-body text-muted-foreground/40">测试AI回复质量，模拟客户发送消息</span>
+                  {simHistory.length > 0 && (
+                    <button
+                      onClick={() => setSimHistory([])}
+                      className="ml-auto text-[10px] font-body text-muted-foreground/40 hover:text-foreground/60"
+                    >
+                      清空对话
+                    </button>
+                  )}
+                </div>
+
+                {/* Chat History */}
+                {simHistory.length > 0 && (
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto px-1">
+                    {simHistory.map((msg, idx) => (
+                      <div key={idx} className={`flex ${
+                        msg.role === 'user' ? 'justify-start' : 'justify-end'
+                      }`}>
+                        <div className={`max-w-[80%] px-3 py-2 rounded-lg text-xs font-body ${
+                          msg.role === 'user'
+                            ? 'bg-foreground/5 text-foreground/70'
+                            : 'bg-purple-500/15 text-purple-300/90'
+                        }`}>
+                          <div className="text-[9px] mb-1 opacity-50">
+                            {msg.role === 'user' ? '模拟客户' : 'AI 回复'}
+                          </div>
+                          {msg.content}
+                        </div>
+                      </div>
+                    ))}
+                    {simulateMutation.isPending && (
+                      <div className="flex justify-end">
+                        <div className="max-w-[80%] px-3 py-2 rounded-lg text-xs font-body bg-purple-500/15 text-purple-300/90">
+                          <div className="text-[9px] mb-1 opacity-50">AI 回复</div>
+                          <div className="flex items-center gap-1">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>思考中...</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Input */}
+                <div className="flex gap-2">
+                  <Input
+                    value={simMessage}
+                    onChange={(e) => setSimMessage(e.target.value)}
+                    placeholder="输入模拟客户消息...例如：你好，看到你的短信了"
+                    className="flex-1 h-8 text-xs bg-background/40 border-foreground/10"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && simMessage.trim() && !simulateMutation.isPending) {
+                        const msg = simMessage.trim();
+                        setSimHistory(prev => [...prev, { role: 'user', content: msg }]);
+                        simulateMutation.mutate({
+                          message: msg,
+                          history: [...simHistory, { role: 'user', content: msg }],
+                        });
+                        setSimMessage("");
+                      }
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      if (simMessage.trim()) {
+                        const msg = simMessage.trim();
+                        setSimHistory(prev => [...prev, { role: 'user', content: msg }]);
+                        simulateMutation.mutate({
+                          message: msg,
+                          history: [...simHistory, { role: 'user', content: msg }],
+                        });
+                        setSimMessage("");
+                      }
+                    }}
+                    disabled={!simMessage.trim() || simulateMutation.isPending}
+                    className="h-8 px-3 bg-amber-500/20 border border-amber-500/30 text-amber-400/80 hover:bg-amber-500/30"
+                  >
+                    <Send className="w-3 h-3" />
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Recent Samples Preview */}
             {learningStats?.recentSamples && learningStats.recentSamples.length > 0 && (
               <div>
                 <div className="flex items-center gap-1.5 mb-2">
                   <MessageSquare className="w-3 h-3 text-foreground/40" />
-                  <span className="text-xs font-body text-muted-foreground/50">最近学习的对话样本</span>
+                  <span className="text-xs font-body text-muted-foreground/50">最近学习的中国号码对话样本</span>
                 </div>
                 <div className="space-y-2 max-h-[300px] overflow-y-auto">
                   {learningStats.recentSamples.slice(0, 3).map((sample: any, idx: number) => (

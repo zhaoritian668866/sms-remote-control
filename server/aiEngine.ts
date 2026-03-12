@@ -422,3 +422,80 @@ export async function testAiConnection(apiUrl: string, apiKey: string, modelName
     return { success: false, error: error.message || "Connection failed" };
   }
 }
+
+// ─── Simulate Conversation (for testing AI quality in admin panel) ───
+
+export async function simulateConversation(
+  apiUrl: string,
+  apiKey: string,
+  modelName: string,
+  userMessage: string,
+  history: Array<{ role: string; content: string }>,
+  learnedSamplesJson: string | null | undefined,
+  bannedWordsStr: string | null | undefined,
+  bannedReplacementsStr: string | null | undefined,
+): Promise<{ success: boolean; reply?: string; error?: string }> {
+  try {
+    // Build learned examples if available
+    let learnedExamples = '';
+    if (learnedSamplesJson) {
+      try {
+        const samples: LearnedSample[] = JSON.parse(learnedSamplesJson);
+        if (samples.length > 0) {
+          const shuffled = samples.sort(() => Math.random() - 0.5).slice(0, 3);
+          const exampleTexts = shuffled.map((s, i) => {
+            const msgs = s.messages.slice(-8).map(m =>
+              `${m.direction === 'outgoing' ? '我方' : '客户'}: ${m.body}`
+            ).join('\n');
+            return `对话样本${i + 1}:\n${msgs}`;
+          }).join('\n\n');
+          learnedExamples = `\n【真实对话参考】\n以下是我方操作人员的真实聊天记录，请学习其中的聊天风格、语气和话术技巧，并融入你的回复中：\n\n${exampleTexts}\n`;
+        }
+      } catch {}
+    }
+
+    const systemPrompt = `你是一个名叫"小美"的28岁女性，正在通过短信和一个潜在的相亲对象聊天。
+${learnedExamples}
+
+【你的人设】
+- 名字：小美
+- 年龄：28岁
+- 性格：温柔、开朗、善解人意
+- 说话风格：自然、口语化、偶尔用一些可爱的语气词（呢、呀、哈）
+- 不要用太书面化的语言，要像真人聊天一样自然
+
+【重要规则】
+1. 每次回复控制在1-3句话，不要太长，像正常短信聊天
+2. 不要暴露自己是AI，要表现得像真人
+3. 不要在一条消息里问太多问题，一次最多问一个
+4. 回复中不要包含任何括号注释或角色扮演标记
+5. 不要使用emoji表情符号（短信不支持）
+6. 语气要自然亲切，不要过于热情或谄媚
+7. 只输出回复内容本身，不要加任何前缀或解释
+
+这是一个模拟对话测试，请根据对方的消息自然地回复。`;
+
+    const llmMessages = [
+      { role: 'system', content: systemPrompt },
+      ...history.slice(-10),
+      { role: 'user', content: userMessage },
+    ];
+
+    let reply = await callLLM(apiUrl, apiKey, modelName, llmMessages);
+
+    // Apply banned words filter
+    if (bannedWordsStr || bannedReplacementsStr) {
+      const bannedConfig = parseBannedWords({
+        bannedWords: bannedWordsStr,
+        bannedWordReplacements: bannedReplacementsStr,
+      });
+      if (bannedConfig.bannedWords.length > 0 || Object.keys(bannedConfig.replacements).length > 0) {
+        reply = filterBannedWords(reply, bannedConfig);
+      }
+    }
+
+    return { success: true, reply };
+  } catch (error: any) {
+    return { success: false, error: error.message || "模拟对话失败" };
+  }
+}

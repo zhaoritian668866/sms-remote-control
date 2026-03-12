@@ -86,8 +86,10 @@ import {
   getAiLearningStats,
   fetchConversationSamples,
   updateAiLearningState,
+  clearAiLearningMemory,
+  fetchHistoricalSamples,
 } from "./db";
-import { generateAiReply, testAiConnection } from "./aiEngine";
+import { generateAiReply, testAiConnection, simulateConversation } from "./aiEngine";
 import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest } from "./wsManager";
 import { saveFileLocally } from "./_core/index";
 import { storagePut } from "./storage";
@@ -1295,12 +1297,67 @@ export const appRouter = router({
       return getAiLearningStats();
     }),
 
-    // Superadmin: Toggle learning and refresh samples
+    // Superadmin: Toggle learning and refresh samples (real-time monitoring)
     refreshLearning: superadminProcedure.mutation(async () => {
       const samples = await fetchConversationSamples(50);
       await updateAiLearningState(samples.length, JSON.stringify(samples));
       return { success: true, learnedCount: samples.length };
     }),
+
+    // Superadmin: Learn from historical records (batch)
+    learnHistory: superadminProcedure
+      .input(z.object({
+        beforeTimestamp: z.number().optional(),
+        limit: z.number().min(1).max(500).optional(),
+      }).optional())
+      .mutation(async ({ input }) => {
+        const limit = input?.limit ?? 100;
+        const samples = await fetchHistoricalSamples(input?.beforeTimestamp, limit);
+        if (samples.length > 0) {
+          // Merge with existing samples
+          const config = await getAiConfig();
+          let existingSamples: any[] = [];
+          try {
+            if (config?.learnedSamples) existingSamples = JSON.parse(config.learnedSamples);
+          } catch {}
+          // Deduplicate by deviceId+phoneNumber
+          const existingKeys = new Set(existingSamples.map((s: any) => `${s.deviceId}-${s.phoneNumber}`));
+          const newSamples = samples.filter(s => !existingKeys.has(`${s.deviceId}-${s.phoneNumber}`));
+          const merged = [...existingSamples, ...newSamples];
+          await updateAiLearningState(merged.length, JSON.stringify(merged));
+          return { success: true, newCount: newSamples.length, totalCount: merged.length };
+        }
+        return { success: true, newCount: 0, totalCount: 0 };
+      }),
+
+    // Superadmin: Clear all learned memory
+    clearMemory: superadminProcedure.mutation(async () => {
+      await clearAiLearningMemory();
+      return { success: true };
+    }),
+
+    // Superadmin: Simulate conversation (test AI reply quality)
+    simulate: superadminProcedure
+      .input(z.object({
+        message: z.string().min(1),
+        history: z.array(z.object({
+          role: z.enum(["user", "assistant"]),
+          content: z.string(),
+        })).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const config = await getAiConfig();
+        if (!config || !config.apiUrl || !config.apiKey || !config.modelName) {
+          return { success: false, error: "请先配置AI接口" };
+        }
+        const result = await simulateConversation(
+          config.apiUrl, config.apiKey, config.modelName,
+          input.message, input.history || [],
+          config.learningEnabled ? config.learnedSamples : null,
+          config.bannedWords, config.bannedWordReplacements,
+        );
+        return result;
+      }),
 
     // Superadmin: Test AI connection
     testConnection: superadminProcedure

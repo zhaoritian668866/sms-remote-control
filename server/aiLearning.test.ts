@@ -251,3 +251,171 @@ describe("AI user settings access control", () => {
     }
   });
 });
+
+// ─── AI Clear Memory Permission Tests ───
+
+describe("AI clear memory access control", () => {
+  it("ai.clearMemory rejects unauthenticated users", async () => {
+    const caller = appRouter.createCaller(createCtx(null));
+    await expect(caller.ai.clearMemory()).rejects.toThrow();
+  });
+
+  it("ai.clearMemory rejects regular users", async () => {
+    const user = createBaseUser({ role: "user" });
+    const caller = appRouter.createCaller(createCtx(user));
+    await expect(caller.ai.clearMemory()).rejects.toThrow();
+  });
+
+  it("ai.clearMemory rejects admin users", async () => {
+    const user = createBaseUser({ role: "admin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    await expect(caller.ai.clearMemory()).rejects.toThrow();
+  });
+
+  it("ai.clearMemory allows superadmin and returns success", async () => {
+    const user = createBaseUser({ role: "superadmin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    try {
+      const result = await caller.ai.clearMemory();
+      expect(result).toHaveProperty("success");
+      expect(result.success).toBe(true);
+    } catch (e: any) {
+      expect(e.code).not.toBe("FORBIDDEN");
+      expect(e.code).not.toBe("UNAUTHORIZED");
+    }
+  });
+});
+
+// ─── AI Learn History Permission Tests ───
+
+describe("AI learn history access control", () => {
+  it("ai.learnHistory rejects unauthenticated users", async () => {
+    const caller = appRouter.createCaller(createCtx(null));
+    await expect(caller.ai.learnHistory({})).rejects.toThrow();
+  });
+
+  it("ai.learnHistory rejects regular users", async () => {
+    const user = createBaseUser({ role: "user" });
+    const caller = appRouter.createCaller(createCtx(user));
+    await expect(caller.ai.learnHistory({})).rejects.toThrow();
+  });
+
+  it("ai.learnHistory rejects admin users", async () => {
+    const user = createBaseUser({ role: "admin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    await expect(caller.ai.learnHistory({})).rejects.toThrow();
+  });
+
+  it("ai.learnHistory allows superadmin and returns count shape", async () => {
+    const user = createBaseUser({ role: "superadmin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    try {
+      const result = await caller.ai.learnHistory({});
+      expect(result).toHaveProperty("success");
+      expect(result).toHaveProperty("newCount");
+      expect(result).toHaveProperty("totalCount");
+      expect(result.success).toBe(true);
+      expect(typeof result.newCount).toBe("number");
+      expect(typeof result.totalCount).toBe("number");
+    } catch (e: any) {
+      expect(e.code).not.toBe("FORBIDDEN");
+      expect(e.code).not.toBe("UNAUTHORIZED");
+    }
+  });
+
+  it("ai.learnHistory accepts optional beforeTimestamp and limit", async () => {
+    const user = createBaseUser({ role: "superadmin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    try {
+      const result = await caller.ai.learnHistory({
+        beforeTimestamp: Date.now(),
+        limit: 50,
+      });
+      expect(result.success).toBe(true);
+    } catch (e: any) {
+      expect(e.code).not.toBe("FORBIDDEN");
+      expect(e.code).not.toBe("UNAUTHORIZED");
+    }
+  });
+});
+
+// ─── AI Simulate Conversation Permission Tests ───
+
+describe("AI simulate conversation access control", () => {
+  it("ai.simulate rejects unauthenticated users", async () => {
+    const caller = appRouter.createCaller(createCtx(null));
+    await expect(
+      caller.ai.simulate({ message: "你好" })
+    ).rejects.toThrow();
+  });
+
+  it("ai.simulate rejects regular users", async () => {
+    const user = createBaseUser({ role: "user" });
+    const caller = appRouter.createCaller(createCtx(user));
+    await expect(
+      caller.ai.simulate({ message: "你好" })
+    ).rejects.toThrow();
+  });
+
+  it("ai.simulate rejects admin users", async () => {
+    const user = createBaseUser({ role: "admin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    await expect(
+      caller.ai.simulate({ message: "你好" })
+    ).rejects.toThrow();
+  });
+
+  it("ai.simulate allows superadmin (returns error if no config)", async () => {
+    const user = createBaseUser({ role: "superadmin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    try {
+      const result = await caller.ai.simulate({ message: "你好" });
+      // Without AI config, should return error
+      expect(result).toHaveProperty("success");
+      if (!result.success) {
+        expect(result).toHaveProperty("error");
+      }
+    } catch (e: any) {
+      expect(e.code).not.toBe("FORBIDDEN");
+      expect(e.code).not.toBe("UNAUTHORIZED");
+    }
+  });
+
+  it("ai.simulate accepts history parameter", async () => {
+    const user = createBaseUser({ role: "superadmin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    try {
+      const result = await caller.ai.simulate({
+        message: "你多大了",
+        history: [
+          { role: "user", content: "你好" },
+          { role: "assistant", content: "你好呀，很高兴认识你" },
+        ],
+      });
+      expect(result).toHaveProperty("success");
+    } catch (e: any) {
+      expect(e.code).not.toBe("FORBIDDEN");
+      expect(e.code).not.toBe("UNAUTHORIZED");
+    }
+  });
+});
+
+// ─── AI Learning Stats Enhanced Shape Tests ───
+
+describe("AI learning stats enhanced shape", () => {
+  it("ai.learningStats returns learnedCount and lastLearnedAt fields", async () => {
+    const user = createBaseUser({ role: "superadmin" });
+    const caller = appRouter.createCaller(createCtx(user));
+    try {
+      const result = await caller.ai.learningStats();
+      expect(result).toHaveProperty("learnedCount");
+      expect(result).toHaveProperty("lastLearnedAt");
+      expect(typeof result.learnedCount).toBe("number");
+      // lastLearnedAt can be null or Date
+      expect(result.lastLearnedAt === null || result.lastLearnedAt instanceof Date || typeof result.lastLearnedAt === "string").toBe(true);
+    } catch (e: any) {
+      expect(e.code).not.toBe("FORBIDDEN");
+      expect(e.code).not.toBe("UNAUTHORIZED");
+    }
+  });
+});

@@ -1451,9 +1451,26 @@ export interface LearnedSample {
 }
 
 /**
+ * Check if a phone number is a Chinese number (+86 or 1xx pattern).
+ */
+function isChineseNumber(phone: string): boolean {
+  const cleaned = phone.replace(/[\s\-()]/g, '');
+  // +86 prefix
+  if (cleaned.startsWith('+86')) return true;
+  // 86 prefix without +
+  if (cleaned.startsWith('86') && cleaned.length >= 13) return true;
+  // Direct 11-digit Chinese mobile (1xx xxxx xxxx)
+  if (/^1[3-9]\d{9}$/.test(cleaned)) return true;
+  // Numbers without country code that look Chinese
+  if (cleaned.length === 11 && cleaned.startsWith('1')) return true;
+  return false;
+}
+
+/**
  * Fetch real human conversation samples from the messages table.
  * Groups messages by device+phoneNumber into conversation threads,
  * only includes conversations with both incoming and outgoing messages (real human replies).
+ * Only includes Chinese phone numbers (+86), filters out overseas test numbers.
  */
 export async function fetchConversationSamples(limit: number = 50): Promise<LearnedSample[]> {
   const db = await getDb();
@@ -1467,11 +1484,14 @@ export async function fetchConversationSamples(limit: number = 50): Promise<Lear
     .where(eq(messages.direction, "outgoing"))
     .groupBy(messages.deviceId, messages.phoneNumber)
     .orderBy(desc(sql`MAX(${messages.smsTimestamp})`))
-    .limit(limit);
+    .limit(limit * 2); // Fetch more to compensate for filtering
 
   const samples: LearnedSample[] = [];
 
   for (const conv of recentOutgoing) {
+    // Filter: only Chinese numbers
+    if (!isChineseNumber(conv.phoneNumber)) continue;
+
     // Get the last 20 messages for this conversation thread
     const thread = await db.select({
       direction: messages.direction,
@@ -1500,6 +1520,8 @@ export async function fetchConversationSamples(limit: number = 50): Promise<Lear
         learnedAt: Date.now(),
       });
     }
+
+    if (samples.length >= limit) break;
   }
 
   return samples;
@@ -1507,6 +1529,7 @@ export async function fetchConversationSamples(limit: number = 50): Promise<Lear
 
 /**
  * Get learning statistics: total conversations with human replies, total messages, etc.
+ * Only counts Chinese phone numbers.
  */
 export async function getAiLearningStats(): Promise<{
   totalConversations: number;
@@ -1514,18 +1537,27 @@ export async function getAiLearningStats(): Promise<{
   totalOutgoing: number;
   totalIncoming: number;
   recentSamples: LearnedSample[];
+  learnedCount: number;
+  lastLearnedAt: Date | null;
 }> {
   const db = await getDb();
-  if (!db) return { totalConversations: 0, totalMessages: 0, totalOutgoing: 0, totalIncoming: 0, recentSamples: [] };
+  if (!db) return { totalConversations: 0, totalMessages: 0, totalOutgoing: 0, totalIncoming: 0, recentSamples: [], learnedCount: 0, lastLearnedAt: null };
 
-  // Total message counts
+  // Chinese number SQL filter: starts with +86, 86, or 11-digit starting with 1
+  const cnFilter = sql`(
+    ${messages.phoneNumber} LIKE '+86%'
+    OR (${messages.phoneNumber} LIKE '86%' AND LENGTH(${messages.phoneNumber}) >= 13)
+    OR (${messages.phoneNumber} REGEXP '^1[3-9][0-9]{9}$')
+  )`;
+
+  // Total message counts (Chinese numbers only)
   const totalResult = await db.select({
     total: sql<number>`COUNT(*)`,
     outgoing: sql<number>`SUM(CASE WHEN ${messages.direction} = 'outgoing' THEN 1 ELSE 0 END)`,
     incoming: sql<number>`SUM(CASE WHEN ${messages.direction} = 'incoming' THEN 1 ELSE 0 END)`,
-  }).from(messages);
+  }).from(messages).where(cnFilter);
 
-  // Count unique conversations that have both incoming and outgoing
+  // Count unique conversations that have both incoming and outgoing (Chinese numbers only)
   const convResult = await db.select({
     count: sql<number>`COUNT(*)`,
   }).from(
@@ -1533,6 +1565,7 @@ export async function getAiLearningStats(): Promise<{
       deviceId: messages.deviceId,
       phoneNumber: messages.phoneNumber,
     }).from(messages)
+      .where(cnFilter)
       .groupBy(messages.deviceId, messages.phoneNumber)
       .having(
         and(
@@ -1542,8 +1575,11 @@ export async function getAiLearningStats(): Promise<{
       ).as('conv_threads')
   );
 
-  // Get 5 most recent samples for display
+  // Get 5 most recent samples for display (already filtered by Chinese numbers)
   const recentSamples = await fetchConversationSamples(5);
+
+  // Get learned state from config
+  const config = await getAiConfig();
 
   return {
     totalConversations: convResult[0]?.count ?? 0,
@@ -1551,6 +1587,8 @@ export async function getAiLearningStats(): Promise<{
     totalOutgoing: totalResult[0]?.outgoing ?? 0,
     totalIncoming: totalResult[0]?.incoming ?? 0,
     recentSamples,
+    learnedCount: config?.learnedCount ?? 0,
+    lastLearnedAt: config?.lastLearnedAt ?? null,
   };
 }
 
@@ -1568,4 +1606,85 @@ export async function updateAiLearningState(learnedCount: number, learnedSamples
       lastLearnedAt: new Date(),
     }).where(eq(aiConfig.id, existing.id));
   }
+}
+
+/**
+ * Clear all learned memory (reset learnedCount, learnedSamples, lastLearnedAt)
+ */
+export async function clearAiLearningMemory(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const existing = await getAiConfig();
+  if (existing) {
+    await db.update(aiConfig).set({
+      learnedCount: 0,
+      learnedSamples: null,
+      lastLearnedAt: null,
+    }).where(eq(aiConfig.id, existing.id));
+  }
+}
+
+/**
+ * Fetch historical conversation samples for batch learning.
+ * Returns conversations older than the given timestamp, Chinese numbers only.
+ */
+export async function fetchHistoricalSamples(beforeTimestamp?: number, limit: number = 100): Promise<LearnedSample[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions: any[] = [eq(messages.direction, "outgoing")];
+  if (beforeTimestamp) {
+    conditions.push(lte(messages.smsTimestamp, beforeTimestamp));
+  }
+
+  const recentOutgoing = await db.select({
+    deviceId: messages.deviceId,
+    phoneNumber: messages.phoneNumber,
+  }).from(messages)
+    .where(and(...conditions))
+    .groupBy(messages.deviceId, messages.phoneNumber)
+    .orderBy(desc(sql`MAX(${messages.smsTimestamp})`))
+    .limit(limit * 2);
+
+  const samples: LearnedSample[] = [];
+
+  for (const conv of recentOutgoing) {
+    if (!isChineseNumber(conv.phoneNumber)) continue;
+
+    const threadConditions: any[] = [
+      eq(messages.deviceId, conv.deviceId),
+      eq(messages.phoneNumber, conv.phoneNumber),
+    ];
+    if (beforeTimestamp) {
+      threadConditions.push(lte(messages.smsTimestamp, beforeTimestamp));
+    }
+
+    const thread = await db.select({
+      direction: messages.direction,
+      body: messages.body,
+      smsTimestamp: messages.smsTimestamp,
+    }).from(messages)
+      .where(and(...threadConditions))
+      .orderBy(desc(messages.smsTimestamp))
+      .limit(20);
+
+    const hasIncoming = thread.some(m => m.direction === 'incoming');
+    const hasOutgoing = thread.some(m => m.direction === 'outgoing');
+    if (hasIncoming && hasOutgoing) {
+      samples.push({
+        deviceId: conv.deviceId,
+        phoneNumber: conv.phoneNumber,
+        messages: thread.reverse().map(m => ({
+          direction: m.direction,
+          body: m.body,
+          timestamp: m.smsTimestamp,
+        })),
+        learnedAt: Date.now(),
+      });
+    }
+
+    if (samples.length >= limit) break;
+  }
+
+  return samples;
 }
