@@ -1277,7 +1277,10 @@ export const appRouter = router({
     // Superadmin: Get global AI config
     getConfig: superadminProcedure.query(async () => {
       const config = await getAiConfig();
-      return config || null;
+      if (!config) return null;
+      // Exclude learnedSamples from response to prevent large JSON data leak to frontend
+      const { learnedSamples, ...rest } = config;
+      return rest;
     }),
 
     // Superadmin: Update global AI config
