@@ -453,11 +453,13 @@ export async function createMessage(data: InsertMessage) {
     return { id: existing[0].id, ...normalized };
   }
 
-  // Dedup strategy 2: For outgoing/incoming messages, check if same device + phone + body exists within 30s window
-  // This catches duplicates from ContentObserver re-reporting messages that were already created by sendSms route
-  // (timestamps differ slightly because server creates msg before phone actually sends it)
+  // Dedup strategy 2: Check if same device + phone + body exists within a time window
+  // For OUTGOING messages: use 2-hour window because Android ContentObserver can batch-report
+  // sent messages with significant delay (sometimes 30-60 minutes after the actual send).
+  // For INCOMING messages: use 30-second window (shorter, since incoming dedup is mainly for
+  // SMS_RECEIVED vs SMS_DELIVER broadcast duplicates which happen almost simultaneously).
   if (normalized.body && normalized.body.length > 0 && normalized.body !== "[图片]") {
-    const timeWindow = 30_000; // 30 seconds
+    const timeWindow = normalized.direction === "outgoing" ? 7_200_000 : 30_000; // 2 hours for outgoing, 30s for incoming
     const tsMin = normalized.smsTimestamp - timeWindow;
     const tsMax = normalized.smsTimestamp + timeWindow;
     const bodyDedup = await db.select({ id: messages.id })
@@ -475,7 +477,7 @@ export async function createMessage(data: InsertMessage) {
       .limit(1);
     
     if (bodyDedup.length > 0) {
-      console.log(`[DB] Dedup: skipping duplicate message (body+window match, deviceId=${normalized.deviceId}, phone=${normalized.phoneNumber}, body=${normalized.body.substring(0, 20)}...)`);
+      console.log(`[DB] Dedup: skipping duplicate message (body+window match, deviceId=${normalized.deviceId}, phone=${normalized.phoneNumber}, window=${timeWindow/1000}s, body=${normalized.body.substring(0, 20)}...)`);
       return { id: bodyDedup[0].id, ...normalized };
     }
   }
