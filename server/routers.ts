@@ -17,6 +17,7 @@ import {
   getDeviceById,
   updateDevice,
   deleteDevice,
+  setDeviceOnline,
   createPairingToken,
   expireOldTokens,
   getAllMessagesByUserId,
@@ -88,9 +89,10 @@ import {
   markMessagesAsLearned,
   fetchUnlearnedChineseSamples,
   updateLearningSummary,
+  getAllDevicesWithUserInfo,
 } from "./db";
 import { generateAiReply, testAiConnection, simulateConversation, generateLearningSummaryFromSamples, shouldReplyToMessage, calculateTypingDelay } from "./aiEngine";
-import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest } from "./wsManager";
+import { sendSmsToDevice, sendMmsToDevice, isDeviceConnected, broadcastToDashboard, sendSyncSmsRequest, kickDevice, kickDashboardSessions, getOnlineDeviceDetails } from "./wsManager";
 import { saveFileLocally } from "./_core/index";
 import { storagePut } from "./storage";
 
@@ -621,10 +623,13 @@ export const appRouter = router({
       }),
 
     // All users management
-    allUsers: superadminProcedure.query(async () => {
+    allUsers: superadminProcedure.query(async ({ ctx }) => {
       const userList = await getAllUsers();
+      // Non-master superadmin (e.g. 'superadmin' account) cannot see superadmin-role users
+      const isMasterAdmin = ctx.user.username === "xiaoqiadmin";
+      const filtered = isMasterAdmin ? userList : userList.filter(u => u.role !== "superadmin" && u.username !== "xiaoqiadmin");
       const result = [];
-      for (const u of userList) {
+      for (const u of filtered) {
         const deviceCount = await getDeviceCountByUserId(u.id);
         let groupName = null;
         if (u.groupId) {
@@ -693,6 +698,88 @@ export const appRouter = router({
           limit: input.limit,
           offset: input.offset,
         });
+      }),
+
+    // ─── Device Management (xiaoqiadmin only) ───
+    onlineDevices: superadminProcedure.query(async ({ ctx }) => {
+      if (ctx.user.username !== "xiaoqiadmin") {
+        throw new Error("无权访问此功能");
+      }
+      const allDevices = await getAllDevicesWithUserInfo();
+      // Get real-time online status from WebSocket
+      const onlineDeviceDetails = getOnlineDeviceDetails();
+      const onlineDeviceIds = new Set(onlineDeviceDetails.map(d => d.deviceId));
+      // Return all devices with real-time online status
+      return allDevices.map(d => ({
+        ...d,
+        isOnline: onlineDeviceIds.has(d.deviceId),
+      }));
+    }),
+
+    kickUser: superadminProcedure
+      .input(z.object({ userId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.username !== "xiaoqiadmin") {
+          throw new Error("无权访问此功能");
+        }
+        const targetUser = await getUserById(input.userId);
+        if (!targetUser) throw new Error("用户不存在");
+        if (targetUser.role === "superadmin") throw new Error("不能踢出超级管理员");
+
+        // 1. Kick all dashboard sessions
+        const dashKicked = kickDashboardSessions(input.userId);
+
+        // 2. Kick all connected devices belonging to this user
+        const userDevices = await getDevicesByUserId(input.userId);
+        let deviceKicked = 0;
+        for (const device of userDevices) {
+          if (kickDevice(device.deviceId)) {
+            await setDeviceOnline(device.deviceId, false);
+            deviceKicked++;
+          }
+        }
+
+        // 3. Increment session version to invalidate JWT tokens
+        await incrementSessionVersion(input.userId);
+
+        return { success: true, dashKicked, deviceKicked };
+      }),
+
+    kickAndResetPassword: superadminProcedure
+      .input(z.object({ userId: z.number(), newPassword: z.string().min(6).max(64) }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.username !== "xiaoqiadmin") {
+          throw new Error("无权访问此功能");
+        }
+        const targetUser = await getUserById(input.userId);
+        if (!targetUser) throw new Error("用户不存在");
+        if (targetUser.role === "superadmin") throw new Error("不能操作超级管理员");
+
+        // 1. Kick all dashboard sessions
+        const dashKicked = kickDashboardSessions(input.userId);
+
+        // 2. Kick all connected devices
+        const userDevices = await getDevicesByUserId(input.userId);
+        let deviceKicked = 0;
+        for (const device of userDevices) {
+          if (kickDevice(device.deviceId)) {
+            await setDeviceOnline(device.deviceId, false);
+            deviceKicked++;
+          }
+        }
+
+        // 3. Reset password
+        const passwordHash = await bcrypt.hash(input.newPassword, 10);
+        const db2 = await (await import("./db")).getDb();
+        if (!db2) throw new Error("Database not available");
+        const { users: usersTable } = await import("../drizzle/schema");
+        const { eq: eqOp } = await import("drizzle-orm");
+        await db2.update(usersTable).set({ passwordHash }).where(eqOp(usersTable.id, input.userId));
+
+        // 4. Increment session version to invalidate all existing tokens
+        await incrementSessionVersion(input.userId);
+
+        return { success: true, dashKicked, deviceKicked };
       }),
 
     // System config management

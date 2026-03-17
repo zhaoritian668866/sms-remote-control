@@ -1,4 +1,4 @@
-import { eq, and, desc, like, or, gte, lte, sql, asc, count, inArray } from "drizzle-orm";
+import { eq, ne, and, desc, like, or, gte, lte, sql, asc, count, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, users, devices, pairingTokens, messages, systemConfig, groups, smsTemplates, deviceContacts, bulkTasks, pinnedContacts, contactReadStatus, aiConfig, aiUserSettings, aiConversations, aiLearningLogs, type InsertDevice, type InsertPairingToken, type InsertMessage, type InsertGroup, type InsertSmsTemplate, type InsertDeviceContact, type InsertBulkTask, type InsertAiConfig, type AiConfig, type AiUserSettings, type AiConversation, type AiLearningLog } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -314,6 +314,51 @@ export async function createDevice(data: InsertDevice) {
   await db.insert(devices).values(data);
   const result = await db.select().from(devices).where(eq(devices.deviceId, data.deviceId)).limit(1);
   return result[0];
+}
+
+export async function getAllDevicesWithUserInfo() {
+  const db = await getDb();
+  if (!db) return [];
+  const allDevices = await db.select({
+    id: devices.id,
+    deviceId: devices.deviceId,
+    name: devices.name,
+    phoneModel: devices.phoneModel,
+    phoneNumber: devices.phoneNumber,
+    isOnline: devices.isOnline,
+    batteryLevel: devices.batteryLevel,
+    signalStrength: devices.signalStrength,
+    lastSeen: devices.lastSeen,
+    userId: devices.userId,
+    createdAt: devices.createdAt,
+  }).from(devices).orderBy(desc(devices.createdAt));
+
+  // Batch fetch user and group info
+  const userIds = Array.from(new Set(allDevices.map(d => d.userId)));
+  const userMap = new Map<number, { username: string | null; name: string | null; role: string; groupId: number | null }>();
+  for (const uid of userIds) {
+    const u = await getUserById(uid);
+    if (u) userMap.set(uid, { username: u.username, name: u.name, role: u.role, groupId: u.groupId });
+  }
+
+  const groupIds = Array.from(new Set(Array.from(userMap.values()).filter(u => u.groupId).map(u => u.groupId!)));
+  const groupMap = new Map<number, string>();
+  for (const gid of groupIds) {
+    const g = await getGroupById(gid);
+    if (g) groupMap.set(gid, g.name);
+  }
+
+  return allDevices.map(d => {
+    const u = userMap.get(d.userId);
+    return {
+      ...d,
+      ownerUsername: u?.username || null,
+      ownerName: u?.name || null,
+      ownerRole: u?.role || "user",
+      groupId: u?.groupId || null,
+      groupName: u?.groupId ? (groupMap.get(u.groupId) || null) : null,
+    };
+  });
 }
 
 export async function getDevicesByUserId(userId: number) {

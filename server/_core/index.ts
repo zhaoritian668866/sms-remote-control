@@ -91,8 +91,19 @@ async function startServer() {
     });
   });
 
-  // APK download endpoint (proxy download with correct filename)
+  // APK download endpoint (serve local file, fallback to CDN proxy)
   app.get("/api/download/apk", async (_req: any, res: any) => {
+    const path = await import("path");
+    const fs = await import("fs");
+    const localApk = path.join(process.cwd(), "public", `feige-v${APP_VERSION}.apk`);
+    if (fs.existsSync(localApk)) {
+      res.setHeader("Content-Type", "application/vnd.android.package-archive");
+      res.setHeader("Content-Disposition", `attachment; filename="feige-v${APP_VERSION}.apk"`);
+      const stat = fs.statSync(localApk);
+      res.setHeader("Content-Length", stat.size);
+      fs.createReadStream(localApk).pipe(res);
+      return;
+    }
     try {
       const response = await fetch(APK_CDN_URL);
       if (!response.ok) {

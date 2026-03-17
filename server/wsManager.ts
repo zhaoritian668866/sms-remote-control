@@ -531,3 +531,40 @@ export function sendSyncSmsRequest(deviceId: string) {
 export function getConnectedDeviceIds(): string[] {
   return Array.from(connectedDevices.keys());
 }
+
+// Kick a device by disconnecting its WebSocket
+export function kickDevice(deviceId: string): boolean {
+  const socket = connectedDevices.get(deviceId);
+  if (socket) {
+    socket.emit("force_disconnect", { reason: "kicked_by_admin" });
+    socket.disconnect(true);
+    connectedDevices.delete(deviceId);
+    console.log(`[WS] Device ${deviceId} kicked by admin`);
+    return true;
+  }
+  return false;
+}
+
+// Kick all dashboard sessions for a specific user
+export function kickDashboardSessions(userId: number): number {
+  let count = 0;
+  dashboardClients.forEach((socket, socketId) => {
+    if (socket.data.userId === userId) {
+      socket.emit("force_disconnect", { reason: "kicked_by_admin" });
+      socket.disconnect(true);
+      dashboardClients.delete(socketId);
+      count++;
+    }
+  });
+  console.log(`[WS] Kicked ${count} dashboard sessions for user ${userId}`);
+  return count;
+}
+
+// Get all online device IDs with their socket data
+export function getOnlineDeviceDetails(): Array<{ deviceId: string; socketId: string }> {
+  const result: Array<{ deviceId: string; socketId: string }> = [];
+  connectedDevices.forEach((socket, deviceId) => {
+    result.push({ deviceId, socketId: socket.id });
+  });
+  return result;
+}

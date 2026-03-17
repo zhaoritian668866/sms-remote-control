@@ -11,6 +11,7 @@ import {
   CheckCircle2, XCircle, AlertTriangle, BookOpen, RefreshCw,
   Brain, Database, TrendingUp, MessageCircle, Trash2, History,
   Send, Sparkles, Clock, Timer, FileText, GraduationCap, Play,
+  LogOut, Power, Signal, Monitor,
 } from "lucide-react";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { toast } from "sonner";
@@ -59,16 +60,20 @@ export default function Admin() {
 }
 
 function AdminContent() {
-  const [tab, setTab] = useState<"stats" | "groups" | "users" | "messages" | "config" | "ai">("stats");
+  const { user } = useAuth();
+  const isMasterAdmin = user?.username === "xiaoqiadmin";
+  const [tab, setTab] = useState<"stats" | "groups" | "users" | "messages" | "config" | "ai" | "devices">("stats");
 
-  const tabs = [
+  const allTabs = [
     { key: "stats" as const, label: "系统概览", icon: BarChart3 },
     { key: "groups" as const, label: "用户组管理", icon: Building2 },
+    { key: "devices" as const, label: "设备管理", icon: Smartphone },
     { key: "users" as const, label: "全部用户", icon: Users },
     { key: "messages" as const, label: "全部记录", icon: MessageSquare },
     { key: "ai" as const, label: "AI配置", icon: Bot },
     { key: "config" as const, label: "系统配置", icon: Settings },
   ];
+  const tabs = isMasterAdmin ? allTabs : allTabs.filter(t => t.key !== "groups" && t.key !== "devices");
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -99,6 +104,7 @@ function AdminContent() {
       <div className="flex-1 overflow-y-auto">
         {tab === "stats" && <StatsPanel />}
         {tab === "groups" && <GroupsPanel />}
+        {tab === "devices" && <DeviceManagementPanel />}
         {tab === "users" && <AllUsersPanel />}
         {tab === "messages" && <MessagesPanel />}
         {tab === "ai" && <AiConfigPanel />}
@@ -756,23 +762,26 @@ function AiConfigPanel() {
 }
 
 function StatsPanel() {
+  const { user } = useAuth();
+  const isMasterAdmin = user?.username === "xiaoqiadmin";
   const { data: stats, isLoading } = trpc.superadmin.stats.useQuery();
 
   if (isLoading) {
     return <div className="flex items-center justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-foreground/40" /></div>;
   }
 
-  const items = [
+  const allItems = [
     { label: "用户组", value: stats?.totalGroups ?? 0, icon: Building2 },
     { label: "注册用户", value: stats?.totalUsers ?? 0, icon: Users },
     { label: "设备总数", value: stats?.totalDevices ?? 0, icon: Smartphone },
     { label: "在线设备", value: stats?.onlineDevices ?? 0, icon: Wifi },
     { label: "短信总量", value: stats?.totalMessages ?? 0, icon: MessageSquare },
   ];
+  const items = isMasterAdmin ? allItems : allItems.filter(i => i.label !== "用户组");
 
   return (
     <div className="p-6">
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className={`grid grid-cols-2 ${items.length >= 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
         {items.map(item => (
           <div key={item.label} className="relative bg-card/50 border border-foreground/10 p-5">
             <div className="absolute top-0 left-0 w-3 h-3 border-t border-l border-foreground/15" />
@@ -1213,6 +1222,230 @@ function ConfigPanel() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Device Management Panel (xiaoqiadmin only) ───
+function DeviceManagementPanel() {
+  const { data: allDevices, isLoading, refetch } = trpc.superadmin.onlineDevices.useQuery(undefined, {
+    refetchInterval: 10000, // Auto-refresh every 10 seconds
+  });
+  const [kickingUser, setKickingUser] = useState<number | null>(null);
+  const [resetUserId, setResetUserId] = useState<number | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [filter, setFilter] = useState<"all" | "online" | "offline">("all");
+
+  const kickMutation = trpc.superadmin.kickUser.useMutation({
+    onSuccess: (data) => {
+      toast.success(`已踢出：${data.dashKicked}个网页会话，${data.deviceKicked}台设备`);
+      refetch();
+      setKickingUser(null);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const kickAndResetMutation = trpc.superadmin.kickAndResetPassword.useMutation({
+    onSuccess: (data) => {
+      toast.success(`已踢出并重置密码：${data.dashKicked}个网页会话，${data.deviceKicked}台设备`);
+      refetch();
+      setResetUserId(null);
+      setNewPassword("");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-foreground/40" /></div>;
+  }
+
+  const devices = allDevices || [];
+  const filteredDevices = filter === "all" ? devices : devices.filter(d => filter === "online" ? d.isOnline : !d.isOnline);
+
+  // Group devices by groupName
+  const grouped = new Map<string, typeof filteredDevices>();
+  for (const d of filteredDevices) {
+    const key = d.groupName || "未分组";
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(d);
+  }
+
+  const onlineCount = devices.filter(d => d.isOnline).length;
+  const offlineCount = devices.filter(d => !d.isOnline).length;
+
+  // Collect unique users for kick operations (non-superadmin)
+  const userMap = new Map<number, { userId: number; username: string | null; name: string | null; role: string; groupName: string | null; deviceCount: number; onlineDevices: number }>();
+  for (const d of devices) {
+    const existing = userMap.get(d.userId);
+    if (existing) {
+      existing.deviceCount++;
+      if (d.isOnline) existing.onlineDevices++;
+    } else {
+      userMap.set(d.userId, {
+        userId: d.userId,
+        username: d.ownerUsername,
+        name: d.ownerName,
+        role: d.ownerRole,
+        groupName: d.groupName,
+        deviceCount: 1,
+        onlineDevices: d.isOnline ? 1 : 0,
+      });
+    }
+  }
+  const userList = Array.from(userMap.values()).filter(u => u.role !== "superadmin");
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header stats */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Monitor className="w-4 h-4 text-foreground/60" />
+            <span className="text-sm font-body text-foreground/70">总设备: <strong className="text-foreground">{devices.length}</strong></span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Wifi className="w-4 h-4 text-green-400/70" />
+            <span className="text-sm font-body text-green-400/70">在线: <strong>{onlineCount}</strong></span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Signal className="w-4 h-4 text-red-400/70" />
+            <span className="text-sm font-body text-red-400/70">离线: <strong>{offlineCount}</strong></span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setFilter("all")} className={`px-3 py-1 text-xs font-body rounded transition-colors ${filter === "all" ? "bg-foreground/10 text-foreground" : "text-muted-foreground/50 hover:text-muted-foreground"}`}>全部</button>
+          <button onClick={() => setFilter("online")} className={`px-3 py-1 text-xs font-body rounded transition-colors ${filter === "online" ? "bg-green-500/20 text-green-400" : "text-muted-foreground/50 hover:text-muted-foreground"}`}>在线</button>
+          <button onClick={() => setFilter("offline")} className={`px-3 py-1 text-xs font-body rounded transition-colors ${filter === "offline" ? "bg-red-500/20 text-red-400" : "text-muted-foreground/50 hover:text-muted-foreground"}`}>离线</button>
+          <button onClick={() => refetch()} className="ml-2 p-1.5 text-foreground/40 hover:text-foreground/70 transition-colors"><RefreshCw className="w-3.5 h-3.5" /></button>
+        </div>
+      </div>
+
+      {/* Grouped device list */}
+      {Array.from(grouped.entries()).map(([groupName, groupDevices]) => (
+        <div key={groupName} className="border border-foreground/10 bg-card/30">
+          <div className="px-4 py-3 border-b border-foreground/10 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-foreground/50" />
+              <span className="text-sm font-serif text-foreground tracking-wider">{groupName}</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-foreground/10 text-foreground/50 rounded">{groupDevices.length}台</span>
+            </div>
+            <span className="text-[10px] text-green-400/60">{groupDevices.filter(d => d.isOnline).length}台在线</span>
+          </div>
+          <div className="divide-y divide-foreground/5">
+            {groupDevices.map(d => (
+              <div key={d.id} className="px-4 py-3 flex items-center justify-between hover:bg-foreground/5 transition-colors">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className={`w-2 h-2 rounded-full ${d.isOnline ? "bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.5)]" : "bg-red-400/50"}`} />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-body text-foreground truncate">{d.name}</span>
+                      {d.phoneModel && <span className="text-[10px] text-muted-foreground/40">{d.phoneModel}</span>}
+                    </div>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <span className="text-[10px] text-muted-foreground/40">用户: {d.ownerName || d.ownerUsername || "未知"}</span>
+                      <span className={`text-[10px] px-1 py-0.5 rounded ${d.ownerRole === "admin" ? "bg-blue-500/20 text-blue-400/80" : "bg-foreground/10 text-foreground/50"}`}>
+                        {d.ownerRole === "admin" ? "主管" : "信使"}
+                      </span>
+                      {d.phoneNumber && <span className="text-[10px] text-muted-foreground/30">{d.phoneNumber}</span>}
+                      {d.batteryLevel != null && <span className="text-[10px] text-muted-foreground/30">电量{d.batteryLevel}%</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {d.ownerRole !== "superadmin" && (
+                    <>
+                      <button
+                        onClick={() => {
+                          if (kickingUser === d.userId) {
+                            kickMutation.mutate({ userId: d.userId });
+                          } else {
+                            setKickingUser(d.userId);
+                            setResetUserId(null);
+                            setTimeout(() => setKickingUser(null), 3000);
+                          }
+                        }}
+                        disabled={kickMutation.isPending}
+                        className={`px-2.5 py-1 text-[10px] font-body rounded transition-colors ${
+                          kickingUser === d.userId
+                            ? "bg-red-500/30 text-red-300 border border-red-500/50"
+                            : "bg-foreground/5 text-foreground/50 hover:bg-red-500/20 hover:text-red-400 border border-foreground/10"
+                        }`}
+                      >
+                        <LogOut className="w-3 h-3 inline mr-1" />
+                        {kickingUser === d.userId ? "确认踢出" : "踢出"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (resetUserId === d.userId && newPassword.length >= 6) {
+                            kickAndResetMutation.mutate({ userId: d.userId, newPassword });
+                          } else {
+                            setResetUserId(d.userId);
+                            setKickingUser(null);
+                            setNewPassword("");
+                          }
+                        }}
+                        disabled={kickAndResetMutation.isPending}
+                        className={`px-2.5 py-1 text-[10px] font-body rounded transition-colors ${
+                          resetUserId === d.userId
+                            ? "bg-orange-500/30 text-orange-300 border border-orange-500/50"
+                            : "bg-foreground/5 text-foreground/50 hover:bg-orange-500/20 hover:text-orange-400 border border-foreground/10"
+                        }`}
+                      >
+                        <Power className="w-3 h-3 inline mr-1" />
+                        {resetUserId === d.userId ? "确认" : "踢出+重置密码"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+            {/* Show password input when resetting */}
+            {groupDevices.some(d => resetUserId === d.userId) && (
+              <div className="px-4 py-3 bg-orange-500/5 border-t border-orange-500/20">
+                <div className="flex items-center gap-3">
+                  <KeyRound className="w-4 h-4 text-orange-400/60" />
+                  <span className="text-xs font-body text-orange-400/70">输入新密码:</span>
+                  <Input
+                    type="text"
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    placeholder="至少6位新密码"
+                    className="h-7 text-xs w-48 bg-background/50 border-orange-500/30"
+                  />
+                  <button
+                    onClick={() => {
+                      if (resetUserId && newPassword.length >= 6) {
+                        kickAndResetMutation.mutate({ userId: resetUserId, newPassword });
+                      } else {
+                        toast.error("密码至少6位");
+                      }
+                    }}
+                    disabled={kickAndResetMutation.isPending || newPassword.length < 6}
+                    className="px-3 py-1 text-[10px] font-body bg-orange-500/20 text-orange-300 rounded hover:bg-orange-500/30 disabled:opacity-50 transition-colors"
+                  >
+                    {kickAndResetMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "确认踢出并重置"}
+                  </button>
+                  <button
+                    onClick={() => { setResetUserId(null); setNewPassword(""); }}
+                    className="px-2 py-1 text-[10px] font-body text-muted-foreground/50 hover:text-foreground/70 transition-colors"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {filteredDevices.length === 0 && (
+        <div className="text-center py-16">
+          <Monitor className="w-8 h-8 text-foreground/20 mx-auto mb-3" />
+          <p className="text-sm font-body text-muted-foreground/40">
+            {filter === "online" ? "暂无在线设备" : filter === "offline" ? "暂无离线设备" : "暂无设备"}
+          </p>
         </div>
       )}
     </div>
