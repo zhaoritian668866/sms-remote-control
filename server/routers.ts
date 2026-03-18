@@ -586,6 +586,27 @@ export const appRouter = router({
         if (input.maxDevices !== undefined) data.maxDevices = input.maxDevices;
         if (input.isActive !== undefined) data.isActive = input.isActive;
         await updateGroup(input.id, data);
+
+        // Enforce quota: if maxDevices reduced, kick excess devices in the group
+        if (input.maxDevices !== undefined) {
+          const groupDevices = await getDevicesByGroupId(input.id);
+          if (groupDevices.length > input.maxDevices) {
+            // Sort by lastSeen ascending (oldest first to kick)
+            const sorted = [...groupDevices].sort((a, b) => {
+              const aTime = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
+              const bTime = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
+              return aTime - bTime;
+            });
+            const toRemove = sorted.slice(0, groupDevices.length - input.maxDevices);
+            for (const dev of toRemove) {
+              kickDevice(dev.deviceId);
+              await setDeviceOnline(dev.deviceId, false);
+              await deleteDevice(dev.id);
+              console.log(`[Quota] Removed device ${dev.deviceId} (id=${dev.id}) from group ${input.id} due to quota reduction`);
+            }
+          }
+        }
+
         return { success: true };
       }),
 
@@ -658,6 +679,26 @@ export const appRouter = router({
         if (input.name !== undefined) data.name = input.name;
         if (input.groupId !== undefined) data.groupId = input.groupId;
         await updateUserAdmin(input.id, data);
+
+        // Enforce quota: if maxDevices reduced, kick excess devices for this user
+        if (input.maxDevices !== undefined) {
+          const userDevices = await getDevicesByUserId(input.id);
+          if (userDevices.length > input.maxDevices) {
+            const sorted = [...userDevices].sort((a, b) => {
+              const aTime = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
+              const bTime = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
+              return aTime - bTime;
+            });
+            const toRemove = sorted.slice(0, userDevices.length - input.maxDevices);
+            for (const dev of toRemove) {
+              kickDevice(dev.deviceId);
+              await setDeviceOnline(dev.deviceId, false);
+              await deleteDevice(dev.id);
+              console.log(`[Quota] Removed device ${dev.deviceId} (id=${dev.id}) from user ${input.id} due to quota reduction`);
+            }
+          }
+        }
+
         return { success: true };
       }),
 
@@ -862,6 +903,26 @@ export const appRouter = router({
         if (input.isActive !== undefined) data.isActive = input.isActive;
         if (input.name !== undefined) data.name = input.name;
         await updateUserAdmin(input.id, data);
+
+        // Enforce quota: if maxDevices reduced, kick excess devices for this user
+        if (input.maxDevices !== undefined) {
+          const userDevices = await getDevicesByUserId(input.id);
+          if (userDevices.length > input.maxDevices) {
+            const sorted = [...userDevices].sort((a, b) => {
+              const aTime = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
+              const bTime = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
+              return aTime - bTime;
+            });
+            const toRemove = sorted.slice(0, userDevices.length - input.maxDevices);
+            for (const dev of toRemove) {
+              kickDevice(dev.deviceId);
+              await setDeviceOnline(dev.deviceId, false);
+              await deleteDevice(dev.id);
+              console.log(`[Quota] Removed device ${dev.deviceId} (id=${dev.id}) from user ${input.id} due to admin quota reduction`);
+            }
+          }
+        }
+
         return { success: true };
       }),
 
